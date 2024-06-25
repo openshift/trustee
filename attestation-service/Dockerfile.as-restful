@@ -24,7 +24,7 @@ RUN curl -L https://download.01.org/intel-sgx/sgx_repo/ubuntu/intel-sgx-deb.key 
 # Build and Install RESTful attestation-service
 RUN cargo install --path attestation-service/attestation-service --bin restful-as --features restful-bin --locked
 
-FROM ubuntu:22.04
+FROM ubuntu:24.04
 
 LABEL org.opencontainers.image.source="https://github.com/confidential-containers/attestation-service"
 

@@ -40,7 +40,7 @@ COPY . .
 ARG KBS_FEATURES=coco-as-builtin,rustls,resource,opa
 RUN cargo install --locked --path kbs/src/kbs --no-default-features --features ${KBS_FEATURES}
 
-FROM ubuntu:22.04
+FROM ubuntu:24.04
 
 RUN apt-get update && \
     apt-get install -y \
