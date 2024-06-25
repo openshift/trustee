@@ -25,7 +25,7 @@ RUN curl -L https://download.01.org/intel-sgx/sgx_repo/ubuntu/intel-sgx-deb.key 
 RUN cargo install --path attestation-service/attestation-service --bin grpc-as --features grpc-bin --locked
 
 
-FROM ubuntu:22.04
+FROM ubuntu:24.04
 
 LABEL org.opencontainers.image.source="https://github.com/confidential-containers/attestation-service"
 

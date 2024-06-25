@@ -12,7 +12,7 @@ ENV PATH="/usr/local/go/bin:${PATH}"
 # Build and Install KBS
 RUN cargo install --path kbs/src/kbs --no-default-features --features intel-trust-authority-as,rustls,resource,opa
 
-FROM ubuntu:22.04
+FROM ubuntu:24.04
 
 LABEL org.opencontainers.image.source="https://github.com/confidential-containers/trustee/kbs"
 
