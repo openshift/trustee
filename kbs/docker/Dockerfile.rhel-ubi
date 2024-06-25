@@ -1,5 +1,5 @@
 # Use Fedora to build.
-FROM registry.fedoraproject.org/fedora-minimal:40 as builder
+FROM registry.fedoraproject.org/fedora-minimal:41 as builder
 
 # Install build dependencies from Fedora repos.
 RUN microdnf -y --setopt=install_weak_deps=0 install \
