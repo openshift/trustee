@@ -5,7 +5,9 @@ FROM registry.access.redhat.com/ubi9 as builder
 RUN \
 # Enable additional repositories for CentOS or RHEL.
 if command -v subscription-manager; then \
-  subscription-manager repos --enable rhel-9-for-x86_64-appstream-rpms --enable codeready-builder-for-rhel-9-x86_64-rpms; \
+  REPO_ARCH=$(uname -m) && \
+  subscription-manager register --org "$(cat /activation-key/org)" --activationkey "$(cat /activation-key/activationkey)" && \
+  subscription-manager repos --enable rhel-9-for-${REPO_ARCH}-appstream-rpms --enable codeready-builder-for-rhel-9-${REPO_ARCH}-rpms; \
 else \
   dnf -y install 'dnf-command(config-manager)' && dnf config-manager --enable crb; \
 fi && \
@@ -20,7 +22,7 @@ dnf -y --setopt=install_weak_deps=0 install \
 # Build.
 WORKDIR /usr/src/kbs
 COPY . .
-ARG KBS_FEATURES=coco-as-builtin,rustls,resource,opa
+ARG KBS_FEATURES=coco-as-builtin,resource,opa,openssl
 RUN \
 # Build sgx_dcap_quoteverify stub.
 pushd sgx_dcap_quoteverify_stubs && \
