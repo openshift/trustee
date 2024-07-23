@@ -304,8 +304,6 @@ spec:
       params:
       - name: BINARY_IMAGE
         value: "$(params.output-image)"
-      - name: BASE_IMAGES
-        value: "$(tasks.build-container-amd64.results.BASE_IMAGES_DIGESTS)"
       - name: SOURCE_ARTIFACT
         value: $(tasks.prefetch-dependencies.results.SOURCE_ARTIFACT)
       - name: CACHI2_ARTIFACT
