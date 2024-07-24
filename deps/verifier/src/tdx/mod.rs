@@ -1,9 +1,7 @@
-use std::str::FromStr;
-
 use anyhow::anyhow;
 use log::{debug, error, info, warn};
 
-use crate::{eventlog::AAEventlog, tdx::claims::generate_parsed_claim};
+use crate::tdx::claims::generate_parsed_claim;
 
 use super::*;
 use async_trait::async_trait;
@@ -13,7 +11,7 @@ use quote::{ecdsa_quote_verification, parse_tdx_quote};
 use serde::{Deserialize, Serialize};
 
 pub(crate) mod claims;
-pub mod eventlog;
+mod eventlog;
 pub(crate) mod quote;
 
 #[derive(Serialize, Deserialize, Debug)]
@@ -23,8 +21,6 @@ struct TdxEvidence {
     cc_eventlog: Option<String>,
     // Base64 encoded TD quote.
     quote: String,
-    // Eventlog of Attestation Agent
-    aa_eventlog: Option<String>,
 }
 
 #[derive(Debug, Default)]
@@ -109,32 +105,15 @@ async fn verify_evidence(
         }
     }
 
-    // Verify Integrity of AA eventlog
-    let aael = match &evidence.aa_eventlog {
-        Some(el) => {
-            let aael =
-                AAEventlog::from_str(el).context("failed to parse AA Eventlog from evidence")?;
-            // We assume we always use PCR 17, rtmr 3 for the application side events.
-
-            aael.integrity_check(quote.rtmr_3())?;
-            info!("CCEL integrity check succeeded.");
-            Some(aael)
-        }
-        None => {
-            warn!("No AA Eventlog included inside the TDX evidence.");
-            None
-        }
-    };
-
     // Return Evidence parsed claim
-    generate_parsed_claim(quote, ccel_option, aael)
+    generate_parsed_claim(quote, ccel_option)
 }
 
 #[cfg(test)]
 mod tests {
 
     use super::*;
-    use std::{fs, str::FromStr};
+    use std::fs;
 
     #[test]
     fn test_generate_parsed_claim() {
@@ -143,21 +122,12 @@ mod tests {
         let quote_bin = fs::read("./test_data/tdx_quote_4.dat").unwrap();
         let quote = parse_tdx_quote(&quote_bin).unwrap();
 
-        let parsed_claim = generate_parsed_claim(quote, Some(ccel), None);
+        let parsed_claim = generate_parsed_claim(quote, Some(ccel));
         assert!(parsed_claim.is_ok());
 
         let _ = fs::write(
             "./test_data/evidence_claim_output.txt",
             format!("{:?}", parsed_claim.unwrap()),
         );
-    }
-
-    #[test]
-    fn test_aael_binding() {
-        let aael_bin = fs::read_to_string("./test_data/aael/AAEL_data_1").unwrap();
-        let aael = AAEventlog::from_str(&aael_bin).unwrap();
-        let quote_bin = fs::read("./test_data/aael/AAEL_quote_tdx").unwrap();
-        let quote = parse_tdx_quote(&quote_bin).unwrap();
-        aael.integrity_check(quote.rtmr_3()).unwrap();
     }
 }
