@@ -57,7 +57,7 @@ spec:
         - name: name
           value: prefetch-dependencies-oci-ta
         - name: bundle
-          value: quay.io/konflux-ci/tekton-catalog/task-prefetch-dependencies-oci-ta:0.1@sha256:093928a1b8a01359cdbdd9f1d91d2e3554014f526c6a989e3efaacf43af0b3c0
+          value: quay.io/konflux-ci/tekton-catalog/task-prefetch-dependencies-oci-ta:0.1@sha256:06a1c57de7a2fcd966654453d497728b08b61bae49aa03519c7dfb5102027ed6
         - name: kind
           value: task
       params:
@@ -80,7 +80,7 @@ spec:
         - name: name
           value: buildah-remote-oci-ta
         - name: bundle
-          value: quay.io/konflux-ci/tekton-catalog/task-buildah-remote-oci-ta:0.2@sha256:d5d19061da1199c7d54294b2f1c289711003ecb0a3583ffd5548b5a0db1668d0
+          value: quay.io/konflux-ci/tekton-catalog/task-buildah-remote-oci-ta:0.2@sha256:89c850c3f1b83611628739981dcf6bea650bbda0c6fd59cf4302a79b80c2a275
         - name: kind
           value: task
       runAfter:
@@ -124,7 +124,7 @@ spec:
         - name: name
           value: buildah-remote-oci-ta
         - name: bundle
-          value: quay.io/konflux-ci/tekton-catalog/task-buildah-remote-oci-ta:0.2@sha256:d5d19061da1199c7d54294b2f1c289711003ecb0a3583ffd5548b5a0db1668d0
+          value: quay.io/konflux-ci/tekton-catalog/task-buildah-remote-oci-ta:0.2@sha256:89c850c3f1b83611628739981dcf6bea650bbda0c6fd59cf4302a79b80c2a275
         - name: kind
           value: task
       runAfter:
@@ -168,7 +168,7 @@ spec:
         - name: name
           value: buildah-remote-oci-ta
         - name: bundle
-          value: quay.io/konflux-ci/tekton-catalog/task-buildah-remote-oci-ta:0.2@sha256:d5d19061da1199c7d54294b2f1c289711003ecb0a3583ffd5548b5a0db1668d0
+          value: quay.io/konflux-ci/tekton-catalog/task-buildah-remote-oci-ta:0.2@sha256:89c850c3f1b83611628739981dcf6bea650bbda0c6fd59cf4302a79b80c2a275
         - name: kind
           value: task
       runAfter:
@@ -212,7 +212,7 @@ spec:
         - name: name
           value: buildah-remote-oci-ta
         - name: bundle
-          value: quay.io/konflux-ci/tekton-catalog/task-buildah-remote-oci-ta:0.2@sha256:d5d19061da1199c7d54294b2f1c289711003ecb0a3583ffd5548b5a0db1668d0
+          value: quay.io/konflux-ci/tekton-catalog/task-buildah-remote-oci-ta:0.2@sha256:89c850c3f1b83611628739981dcf6bea650bbda0c6fd59cf4302a79b80c2a275
         - name: kind
           value: task
       runAfter:
