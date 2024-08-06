@@ -19,7 +19,7 @@ RUN if [ "${ARCH}" = "x86_64" ]; then curl -L https://download.01.org/intel-sgx/
 # Build and Install RESTful attestation-service
 RUN cargo install --path attestation-service --bin restful-as --features restful-bin --locked
 
-FROM ubuntu:22.04
+FROM ubuntu:24.04
 ARG ARCH=x86_64
 
 LABEL org.opencontainers.image.source="https://github.com/confidential-containers/attestation-service"

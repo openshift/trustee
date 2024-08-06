@@ -40,7 +40,7 @@ COPY . .
 RUN cd kbs && make AS_FEATURE=coco-as-builtin HTTPS_CRYPTO=${HTTPS_CRYPTO} POLICY_ENGINE=opa ALIYUN=${ALIYUN} && \
     make install-kbs
 
-FROM ubuntu:22.04
+FROM ubuntu:24.04
 ARG ARCH=x86_64
 
 WORKDIR /tmp

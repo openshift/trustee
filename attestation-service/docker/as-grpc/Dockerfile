@@ -20,7 +20,7 @@ RUN if [ "${ARCH}" = "x86_64" ]; then curl -L https://download.01.org/intel-sgx/
 RUN cargo install --path attestation-service --bin grpc-as --features grpc-bin --locked
 
 
-FROM ubuntu:22.04
+FROM ubuntu:24.04
 ARG ARCH=x86_64
 
 LABEL org.opencontainers.image.source="https://github.com/confidential-containers/attestation-service"

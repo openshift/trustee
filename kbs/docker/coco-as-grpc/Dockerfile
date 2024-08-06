@@ -12,7 +12,7 @@ RUN apt-get update && apt install -y protobuf-compiler git
 RUN cd kbs && make AS_FEATURE=coco-as-grpc HTTPS_CRYPTO=${HTTPS_CRYPTO} POLICY_ENGINE=opa ALIYUN=${ALIYUN} && \
     make install-kbs
 
-FROM ubuntu:22.04
+FROM ubuntu:24.04
 
 LABEL org.opencontainers.image.source="https://github.com/confidential-containers/trustee/kbs"
 
