@@ -3,6 +3,8 @@ FROM registry.access.redhat.com/ubi9 as builder
 
 # Install build dependencies from CentOS or RHEL repos.
 RUN \
+# Update packages. Get CVE fixes sooner.
+dnf -y update && \
 # Enable additional repositories for CentOS or RHEL.
 if command -v subscription-manager; then \
   REPO_ARCH=$(uname -m) && \
@@ -43,10 +45,14 @@ fi
 # Package UBI image.
 FROM registry.access.redhat.com/ubi9
 
+# Update packages. Get CVE fixes sooner.
+RUN dnf -y update && dnf clean all
+
 COPY --from=builder /usr/local/bin/kbs /usr/local/bin/kbs
 COPY --from=builder /usr/src/kbs/sgx_dcap_quoteverify_stubs/libsgx-dcap-quote-verify-1.21.100.3-1.el9.x86_64.rpm /tmp/libsgx-dcap-quote-verify-1.21.100.3-1.el9.x86_64.rpm
 COPY --from=builder /usr/src/kbs/sgx_dcap_quoteverify_stubs/libsgx-dcap-default-qpl-1.21.100.3-1.el9.x86_64.rpm /tmp/libsgx-dcap-default-qpl-1.21.100.3-1.el9.x86_64.rpm
 
+# Install Intel binaries
 RUN \
 if [ $(uname -m) = "x86_64" ]; then \
   dnf -y --nogpgcheck --setopt=install_weak_deps=0 localinstall \
