@@ -414,28 +414,6 @@ spec:
         value: "$(tasks.build-image-index.results.IMAGE_DIGEST)"
       - name: image-url
         value: "$(tasks.build-image-index.results.IMAGE_URL)"
-    - name: sbom-json-check
-      taskRef:
-        resolver: bundles
-        params:
-        - name: name
-          value: sbom-json-check
-        - name: bundle
-          value: quay.io/konflux-ci/tekton-catalog/task-sbom-json-check:0.2@sha256:d4eee0cfef2069273752f6d27088b147ae6eac5f5db45e481efb4ae1a07883f6
-        - name: kind
-          value: task
-      when:
-      - input: "$(params.skip-checks)"
-        operator: in
-        values:
-        - 'false'
-      runAfter:
-      - build-image-index
-      params:
-      - name: IMAGE_URL
-        value: "$(tasks.build-image-index.results.IMAGE_URL)"
-      - name: IMAGE_DIGEST
-        value: "$(tasks.build-image-index.results.IMAGE_DIGEST)"
     - name: apply-tags
       params:
       - name: IMAGE
