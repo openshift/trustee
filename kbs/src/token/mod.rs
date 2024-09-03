@@ -5,12 +5,12 @@
 use anyhow::*;
 use async_trait::async_trait;
 use serde::Deserialize;
-use std::fmt;
 use std::sync::Arc;
 use strum::EnumString;
 use tokio::sync::RwLock;
 
 mod coco;
+mod jwk;
 
 #[async_trait]
 pub trait AttestationTokenVerifier {
@@ -19,29 +19,27 @@ pub trait AttestationTokenVerifier {
     async fn verify(&self, token: String) -> Result<String>;
 }
 
-#[derive(Deserialize, Debug, Clone, EnumString)]
+#[derive(Deserialize, Default, Debug, Clone, EnumString)]
 pub enum AttestationTokenVerifierType {
+    #[default]
     CoCo,
+    Jwk,
 }
 
 #[derive(Deserialize, Debug, Clone)]
 pub struct AttestationTokenVerifierConfig {
+    #[serde(default)]
     pub attestation_token_type: AttestationTokenVerifierType,
 
-    // Trusted Certificates file (PEM format) path to verify Attestation Token Signature.
-    pub trusted_certs_paths: Option<Vec<String>>,
+    /// Trusted Certificates file (PEM format) path (for "CoCo") or a valid Url
+    /// (file:// and https:// schemes accepted) pointing to a local JWKSet file
+    /// or to an OpenID configuration url giving a pointer to JWKSet certificates
+    /// (for "Jwk") to verify Attestation Token Signature.
+    #[serde(default)]
+    pub trusted_certs_paths: Vec<String>,
 }
 
-impl Default for AttestationTokenVerifierConfig {
-    fn default() -> Self {
-        Self {
-            attestation_token_type: AttestationTokenVerifierType::CoCo,
-            trusted_certs_paths: None,
-        }
-    }
-}
-
-pub fn create_token_verifier(
+pub async fn create_token_verifier(
     config: AttestationTokenVerifierConfig,
 ) -> Result<Arc<RwLock<dyn AttestationTokenVerifier + Send + Sync>>> {
     match config.attestation_token_type {
@@ -49,11 +47,9 @@ pub fn create_token_verifier(
             coco::CoCoAttestationTokenVerifier::new(&config)?,
         ))
             as Arc<RwLock<dyn AttestationTokenVerifier + Send + Sync>>),
-    }
-}
-
-impl fmt::Display for AttestationTokenVerifierType {
-    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        write!(f, "{:?}", self)
+        AttestationTokenVerifierType::Jwk => Ok(Arc::new(RwLock::new(
+            jwk::JwkAttestationTokenVerifier::new(&config).await?,
+        ))
+            as Arc<RwLock<dyn AttestationTokenVerifier + Send + Sync>>),
     }
 }

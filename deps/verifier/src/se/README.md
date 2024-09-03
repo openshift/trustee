@@ -130,7 +130,6 @@ export SE_SKIP_CERTS_VERIFICATION=true
 ```
 DOCKER_BUILDKIT=1 docker build --build-arg HTTPS_CRYPTO="openssl" --build-arg ARCH="s390x" -t ghcr.io/confidential-containers/staged-images/kbs:latest . -f kbs/docker/Dockerfile
 ```
->Note: Please add `--debug` in statement like `cargo install` in file `kbs/docker/Dockerfile` if you're using a development host key document to skip HKD's signature verification.
 
 - Prepare a docker compose file, similar as:
 ```
@@ -242,13 +241,13 @@ allow if {
     input["se.attestation_phkh"] == "xxx"
     input["se.image_phkh"] == "xxx"
     input["se.tag"] == "xxx"
-    input["se.user_data"] == "00"
+    input["se.user_data"] == "xxx"
     converted_version == "256"
 }
 EOF
 ```
 
-Where the values come from [retrive-the-rvps-field-for-an-ibm-se-image](#retrive-the-rvps-field-for-an-ibm-se-image)
+Where the values `se.version`, `se.attestation_phkh`, `se.image_phkh` and `se.tag` come from [retrive-the-rvps-field-for-an-ibm-se-image](#retrive-the-rvps-field-for-an-ibm-se-image). The value `se.user_data` comes from [initdata](https://github.com/confidential-containers/cloud-api-adaptor/blob/main/src/cloud-api-adaptor/docs/initdata.md). Please remove `input["se.user_data"] == "xxx"` if `initdata` is not used.
 
 #### Set the attestation policy
 ```bash

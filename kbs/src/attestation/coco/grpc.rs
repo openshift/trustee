@@ -2,7 +2,7 @@
 // Licensed under the Apache License, Version 2.0, see LICENSE for details.
 // SPDX-License-Identifier: Apache-2.0
 
-use crate::attestation::Attest;
+use crate::attestation::{make_nonce, Attest};
 use anyhow::*;
 use async_trait::async_trait;
 use base64::{
@@ -105,7 +105,7 @@ impl Attest for GrpcClientPool {
             .to_string();
         let req = tonic::Request::new(AttestationRequest {
             tee,
-            evidence: URL_SAFE_NO_PAD.encode(attestation.tee_evidence),
+            evidence: URL_SAFE_NO_PAD.encode(attestation.tee_evidence.to_string()),
             runtime_data_hash_algorithm: COCO_AS_HASH_ALGORITHM.into(),
             init_data_hash_algorithm: COCO_AS_HASH_ALGORITHM.into(),
             runtime_data: Some(RuntimeData::StructuredRuntimeData(runtime_data_plaintext)),
@@ -124,12 +124,16 @@ impl Attest for GrpcClientPool {
         Ok(token)
     }
 
-    async fn generate_challenge(&self, tee: Tee, tee_parameters: String) -> Result<Challenge> {
+    async fn generate_challenge(
+        &self,
+        tee: Tee,
+        tee_parameters: serde_json::Value,
+    ) -> Result<Challenge> {
         let nonce = match tee {
             Tee::Se => {
                 let mut inner = HashMap::new();
                 inner.insert(String::from("tee"), String::from("se"));
-                inner.insert(String::from("tee_params"), tee_parameters);
+                inner.insert(String::from("tee_params"), tee_parameters.to_string());
                 let req = tonic::Request::new(ChallengeRequest { inner });
 
                 let mut client = { self.pool.lock().await.get().await? };
@@ -140,20 +144,12 @@ impl Attest for GrpcClientPool {
                     .into_inner()
                     .attestation_challenge
             }
-            _ => {
-                let mut nonce: Vec<u8> = vec![0; 32];
-
-                thread_rng()
-                    .try_fill(&mut nonce[..])
-                    .map_err(anyhow::Error::from)?;
-
-                STANDARD.encode(&nonce)
-            }
+            _ => make_nonce().await?,
         };
 
         let challenge = Challenge {
             nonce,
-            extra_params: String::new(),
+            extra_params: serde_json::Value::String(String::new()),
         };
 
         Ok(challenge)
