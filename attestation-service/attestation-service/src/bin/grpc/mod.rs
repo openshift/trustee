@@ -30,6 +30,7 @@ use crate::rvps_api::{
 };
 
 fn to_kbs_tee(tee: &str) -> anyhow::Result<Tee> {
+    debug!("Converting TEE type: {}", tee);
     let tee = match tee {
         "sev" => Tee::Sev,
         "sgx" => Tee::Sgx,
@@ -44,6 +45,7 @@ fn to_kbs_tee(tee: &str) -> anyhow::Result<Tee> {
         other => bail!("Unsupported TEE type: {other}"),
     };
 
+    debug!("Converted TEE: {:?}", tee);
     Ok(tee)
 }
 
@@ -63,12 +65,20 @@ pub struct AttestationServer {
 
 impl AttestationServer {
     pub async fn new(config_path: Option<String>) -> Result<Self, GrpcError> {
+        debug!("Initializing AttestationServer with config path: {:?}", config_path);
         let config = match config_path {
-            Some(path) => Config::try_from(Path::new(&path)).map_err(GrpcError::Config)?,
-            None => Config::default(),
+            Some(path) => {
+                debug!("Loading config from: {}", path);
+                Config::try_from(Path::new(&path)).map_err(GrpcError::Config)?
+            }
+            None => {
+                info!("No config path provided, using default configuration.");
+                Config::default()
+            }
         };
 
         let service = Service::new(config).await?;
+        debug!("Attestation service created successfully.");
 
         Ok(Self {
             attestation_service: service,
@@ -83,17 +93,23 @@ impl AttestationService for Arc<RwLock<AttestationServer>> {
         request: Request<SetPolicyRequest>,
     ) -> Result<Response<SetPolicyResponse>, Status> {
         let request: SetPolicyRequest = request.into_inner();
-
         info!("SetPolicy API called.");
         debug!("SetPolicyInput: {request:#?}");
+
+        let policy_id = &request.policy_id;
+        let policy = &request.policy;
 
         self.write()
             .await
             .attestation_service
-            .set_policy(request.policy_id, request.policy)
+            .set_policy(policy_id.clone(), policy.clone())
             .await
-            .map_err(|e| Status::aborted(format!("Set Attestation Policy Failed: {e}")))?;
+            .map_err(|e| {
+                debug!("Failed to set policy for policy_id: {policy_id}. Error: {e}");
+                Status::aborted(format!("Set Attestation Policy Failed: {e}"))
+            })?;
 
+        debug!("Successfully set attestation policy for policy_id: {}", policy_id);
         Ok(Response::new(SetPolicyResponse {}))
     }
 
@@ -102,80 +118,97 @@ impl AttestationService for Arc<RwLock<AttestationServer>> {
         request: Request<AttestationRequest>,
     ) -> Result<Response<AttestationResponse>, Status> {
         let request: AttestationRequest = request.into_inner();
-
         info!("AttestationEvaluate API called.");
-        debug!("Evidence: {}", &request.evidence);
+        debug!("Received AttestationRequest: {request:#?}");
 
         let tee = to_kbs_tee(&request.tee)
             .map_err(|e| Status::aborted(format!("parse TEE type: {e}")))?;
+        debug!("Parsed TEE: {:?}", tee);
+
         let evidence = URL_SAFE_NO_PAD
-            .decode(request.evidence)
+            .decode(request.evidence.clone())
             .map_err(|e| Status::aborted(format!("Illegal input Evidence: {e}")))?;
+        debug!("Decoded evidence.");
 
         let runtime_data = match request.runtime_data {
-            Some(runtime_data) => match runtime_data {
-                crate::as_api::attestation_request::RuntimeData::RawRuntimeData(raw) => {
-                    let raw_runtime = URL_SAFE_NO_PAD
-                        .decode(raw)
-                        .map_err(|e| Status::aborted(format!("base64 decode runtime data: {e}")))?;
-                    Some(attestation_service::Data::Raw(raw_runtime))
+            Some(runtime_data) => {
+                debug!("Processing runtime data.");
+                match runtime_data {
+                    crate::as_api::attestation_request::RuntimeData::RawRuntimeData(raw) => {
+                        let raw_runtime = URL_SAFE_NO_PAD
+                            .decode(raw)
+                            .map_err(|e| Status::aborted(format!("base64 decode runtime data: {e}")))?;
+                        debug!("Raw runtime data decoded successfully.");
+                        Some(attestation_service::Data::Raw(raw_runtime))
+                    }
+                    crate::as_api::attestation_request::RuntimeData::StructuredRuntimeData(
+                        structured,
+                    ) => {
+                        let structured = serde_json::from_str(&structured).map_err(|e| {
+                            Status::aborted(format!("parse structured runtime data: {e}"))
+                        })?;
+                        debug!("Structured runtime data parsed successfully.");
+                        Some(attestation_service::Data::Structured(structured))
+                    }
                 }
-                crate::as_api::attestation_request::RuntimeData::StructuredRuntimeData(
-                    structured,
-                ) => {
-                    let structured = serde_json::from_str(&structured).map_err(|e| {
-                        Status::aborted(format!("parse structured runtime data: {e}"))
-                    })?;
-                    Some(attestation_service::Data::Structured(structured))
-                }
-            },
-            None => None,
+            }
+            None => {
+                debug!("No runtime data provided.");
+                None
+            }
         };
 
         let init_data = match request.init_data {
-            Some(init_data) => match init_data {
-                crate::as_api::attestation_request::InitData::RawInitData(raw) => {
-                    let raw_init = URL_SAFE_NO_PAD
-                        .decode(raw)
-                        .map_err(|e| Status::aborted(format!("base64 decode init data: {e}")))?;
-                    Some(attestation_service::Data::Raw(raw_init))
+            Some(init_data) => {
+                debug!("Processing init data.");
+                match init_data {
+                    crate::as_api::attestation_request::InitData::RawInitData(raw) => {
+                        let raw_init = URL_SAFE_NO_PAD
+                            .decode(raw)
+                            .map_err(|e| Status::aborted(format!("base64 decode init data: {e}")))?;
+                        debug!("Raw init data decoded successfully.");
+                        Some(attestation_service::Data::Raw(raw_init))
+                    }
+                    crate::as_api::attestation_request::InitData::StructuredInitData(structured) => {
+                        let structured = serde_json::from_str(&structured)
+                            .map_err(|e| Status::aborted(format!("parse structured init data: {e}")))?;
+                        debug!("Structured init data parsed successfully.");
+                        Some(attestation_service::Data::Structured(structured))
+                    }
                 }
-                crate::as_api::attestation_request::InitData::StructuredInitData(structured) => {
-                    let structured = serde_json::from_str(&structured)
-                        .map_err(|e| Status::aborted(format!("parse structured init data: {e}")))?;
-                    Some(attestation_service::Data::Structured(structured))
-                }
-            },
-            None => None,
-        };
-
-        let runtime_data_hash_algorithm = match request.runtime_data_hash_algorithm.is_empty() {
-            false => {
-                HashAlgorithm::try_from(&request.runtime_data_hash_algorithm[..]).map_err(|e| {
-                    Status::aborted(format!("parse runtime data HashAlgorithm failed: {e}"))
-                })?
             }
-            true => {
-                info!("No Runtime Data Hash Algorithm provided, use `sha384` by default.");
-                HashAlgorithm::Sha384
+            None => {
+                debug!("No init data provided.");
+                None
             }
         };
 
-        let init_data_hash_algorithm = match request.init_data_hash_algorithm.is_empty() {
-            false => {
-                HashAlgorithm::try_from(&request.init_data_hash_algorithm[..]).map_err(|e| {
-                    Status::aborted(format!("parse init data HashAlgorithm failed: {e}"))
-                })?
-            }
-            true => {
-                info!("No Init Data Hash Algorithm provided, use `sha384` by default.");
-                HashAlgorithm::Sha384
-            }
+        let runtime_data_hash_algorithm = if !request.runtime_data_hash_algorithm.is_empty() {
+            debug!("Runtime data hash algorithm provided: {}", request.runtime_data_hash_algorithm);
+            HashAlgorithm::try_from(&request.runtime_data_hash_algorithm[..]).map_err(|e| {
+                Status::aborted(format!("parse runtime data HashAlgorithm failed: {e}"))
+            })?
+        } else {
+            info!("No Runtime Data Hash Algorithm provided, using `sha384` by default.");
+            HashAlgorithm::Sha384
         };
 
-        let policy_ids = match request.policy_ids.is_empty() {
-            true => vec!["default".into()],
-            false => request.policy_ids,
+        let init_data_hash_algorithm = if !request.init_data_hash_algorithm.is_empty() {
+            debug!("Init data hash algorithm provided: {}", request.init_data_hash_algorithm);
+            HashAlgorithm::try_from(&request.init_data_hash_algorithm[..]).map_err(|e| {
+                Status::aborted(format!("parse init data HashAlgorithm failed: {e}"))
+            })?
+        } else {
+            info!("No Init Data Hash Algorithm provided, using `sha384` by default.");
+            HashAlgorithm::Sha384
+        };
+
+        let policy_ids = if request.policy_ids.is_empty() {
+            debug!("No policy IDs provided, using default policy ID.");
+            vec!["default".into()]
+        } else {
+            debug!("Using provided policy IDs: {:?}", request.policy_ids);
+            request.policy_ids
         };
 
         let attestation_token = self
@@ -192,7 +225,10 @@ impl AttestationService for Arc<RwLock<AttestationServer>> {
                 policy_ids,
             )
             .await
-            .map_err(|e| Status::aborted(format!("Attestation: {e:?}")))?;
+            .map_err(|e| {
+                debug!("Attestation evaluation failed: {:?}", e);
+                Status::aborted(format!("Attestation: {e:?}"))
+            })?;
 
         debug!("Attestation Token: {}", &attestation_token);
 
@@ -212,10 +248,14 @@ impl AttestationService for Arc<RwLock<AttestationServer>> {
             .inner
             .get("tee")
             .ok_or(Status::aborted("Error parse inner_tee tee"))?;
+        debug!("Parsed inner TEE: {}", inner_tee);
+
         let tee_params = request
             .inner
             .get("tee_params")
             .map_or(Err(Status::aborted("Error parse inner_tee tee_params")), Ok)?;
+        debug!("Parsed TEE params: {:?}", tee_params);
+
         let tee = to_kbs_tee(&inner_tee)
             .map_err(|e| Status::aborted(format!("Error parse TEE type: {e}")))?;
 
@@ -225,7 +265,12 @@ impl AttestationService for Arc<RwLock<AttestationServer>> {
             .attestation_service
             .generate_supplemental_challenge(tee, tee_params.clone())
             .await
-            .map_err(|e| Status::aborted(format!("Challenge: {e:?}")))?;
+            .map_err(|e| {
+                debug!("Challenge generation failed: {:?}", e);
+                Status::aborted(format!("Challenge: {e:?}"))
+            })?;
+
+        debug!("Generated attestation challenge: {}", attestation_challenge);
 
         let res = ChallengeResponse {
             attestation_challenge,
@@ -242,7 +287,7 @@ impl ReferenceValueProviderService for Arc<RwLock<AttestationServer>> {
     ) -> Result<Response<ReferenceValueQueryResponse>, Status> {
         let status =
             Status::aborted("Cannot query reference values using RVPS as a submodule in AS.");
-
+        debug!("Attempted to query reference values: {:?}", status);
         Err(status)
     }
 
@@ -251,19 +296,24 @@ impl ReferenceValueProviderService for Arc<RwLock<AttestationServer>> {
         request: Request<ReferenceValueRegisterRequest>,
     ) -> Result<Response<ReferenceValueRegisterResponse>, Status> {
         let request = request.into_inner();
-
         info!("RegisterReferenceValue API called.");
-        debug!("registry reference value: {}", request.message);
+        debug!("Registry reference value request: {}", request.message);
 
         let message = serde_json::from_str(&request.message)
             .map_err(|e| Status::aborted(format!("Parse message: {e}")))?;
+        debug!("Parsed message for reference value registration.");
+
         self.write()
             .await
             .attestation_service
             .register_reference_value(message)
             .await
-            .map_err(|e| Status::aborted(format!("Register reference value: {e}")))?;
+            .map_err(|e| {
+                debug!("Failed to register reference value: {:?}", e);
+                Status::aborted(format!("Register reference value: {e}"))
+            })?;
 
+        debug!("Successfully registered reference value.");
         let res = ReferenceValueRegisterResponse {};
         Ok(Response::new(res))
     }
@@ -271,13 +321,18 @@ impl ReferenceValueProviderService for Arc<RwLock<AttestationServer>> {
 
 pub async fn start(socket: SocketAddr, config_path: Option<String>) -> Result<(), GrpcError> {
     info!("Listen socket: {}", &socket);
+    debug!("Starting AttestationServer on socket: {:?}", socket);
 
     let attestation_server = Arc::new(RwLock::new(AttestationServer::new(config_path).await?));
+    debug!("AttestationServer initialized successfully.");
 
     Server::builder()
         .add_service(AttestationServiceServer::new(attestation_server.clone()))
         .add_service(ReferenceValueProviderServiceServer::new(attestation_server))
         .serve(socket)
         .await?;
+
+    debug!("Server started successfully.");
     Ok(())
 }
+

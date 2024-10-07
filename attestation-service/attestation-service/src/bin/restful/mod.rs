@@ -14,7 +14,7 @@ use tokio::sync::RwLock;
 
 #[derive(Error, Debug, AsRefStr)]
 pub enum Error {
-    #[error("An internal error occured: {0}")]
+    #[error("An internal error occurred: {0}")]
     InternalError(#[from] anyhow::Error),
 }
 
@@ -46,8 +46,6 @@ pub struct AttestationRequest {
 
 #[derive(Debug, Serialize, Deserialize)]
 pub struct ChallengeRequest {
-    // ChallengeRequest uses HashMap to pass variables like:
-    // tee, tee_params etc
     #[serde(flatten)]
     inner: HashMap<String, String>,
 }
@@ -71,7 +69,7 @@ fn to_tee(tee: &str) -> anyhow::Result<Tee> {
         "sample" => Tee::Sample,
         "aztdxvtpm" => Tee::AzTdxVtpm,
         "se" => Tee::Se,
-        other => bail!("tee `{other} not supported`"),
+        other => bail!("tee `{other}` not supported"),
     };
 
     Ok(res)
@@ -80,18 +78,21 @@ fn to_tee(tee: &str) -> anyhow::Result<Tee> {
 fn parse_data(data: Data) -> Result<attestation_service::Data> {
     let res = match data {
         Data::Raw(raw) => {
+            debug!("Decoding raw data of length: {}", raw.len());
             let data = URL_SAFE_NO_PAD
                 .decode(raw)
                 .context("base64 decode raw data")?;
             attestation_service::Data::Raw(data)
         }
-        Data::Structured(structured) => attestation_service::Data::Structured(structured),
+        Data::Structured(structured) => {
+            debug!("Using structured data: {:?}", structured);
+            attestation_service::Data::Structured(structured)
+        }
     };
 
     Ok(res)
 }
 
-/// This handler uses json extractor
 pub async fn attestation(
     request: web::Json<AttestationRequest>,
     cocoas: web::Data<Arc<RwLock<AttestationService>>>,
@@ -99,7 +100,7 @@ pub async fn attestation(
     info!("Attestation API called.");
 
     let request = request.into_inner();
-    debug!("attestation: {request:#?}");
+    debug!("Attestation request: {request:#?}");
 
     let evidence = URL_SAFE_NO_PAD
         .decode(&request.evidence)
@@ -121,26 +122,28 @@ pub async fn attestation(
 
     let runtime_data_hash_algorithm = match request.runtime_data_hash_algorithm {
         Some(alg) => {
+            debug!("Parsing runtime data hash algorithm: {}", alg);
             HashAlgorithm::try_from(&alg[..]).context("parse runtime data HashAlgorithm failed")?
         }
         None => {
-            info!("No Runtime Data Hash Algorithm provided, use `sha384` by default.");
+            info!("No Runtime Data Hash Algorithm provided, using `sha384` by default.");
             HashAlgorithm::Sha384
         }
     };
 
     let init_data_hash_algorithm = match request.init_data_hash_algorithm {
         Some(alg) => {
+            debug!("Parsing init data hash algorithm: {}", alg);
             HashAlgorithm::try_from(&alg[..]).context("parse init data HashAlgorithm failed")?
         }
         None => {
-            info!("No Init Data Hash Algorithm provided, use `sha384` by default.");
+            info!("No Init Data Hash Algorithm provided, using `sha384` by default.");
             HashAlgorithm::Sha384
         }
     };
 
     let policy_ids = if request.policy_ids.is_empty() {
-        info!("no policy specified, use `default`");
+        info!("No policies specified, using `default`.");
         vec!["default".into()]
     } else {
         request.policy_ids
@@ -160,6 +163,8 @@ pub async fn attestation(
         )
         .await
         .context("attestation report evaluate")?;
+
+    debug!("Attestation token issued: {:?}", token);
     Ok(HttpResponse::Ok().body(token))
 }
 
@@ -169,7 +174,6 @@ pub struct SetPolicyInput {
     policy: String,
 }
 
-/// This handler uses json extractor with limit
 pub async fn set_policy(
     input: web::Json<SetPolicyInput>,
     cocoas: web::Data<Arc<RwLock<AttestationService>>>,
@@ -177,7 +181,7 @@ pub async fn set_policy(
     info!("Set Policy API called.");
     let input = input.into_inner();
 
-    debug!("set policy: {input:#?}");
+    debug!("Set policy input: {input:#?}");
     cocoas
         .write()
         .await
@@ -185,18 +189,18 @@ pub async fn set_policy(
         .await
         .context("set policy")?;
 
+    info!("Policy set successfully.");
     Ok(HttpResponse::Ok().body(""))
 }
 
-/// This handler uses json extractor
 pub async fn get_challenge(
     request: web::Json<ChallengeRequest>,
     cocoas: web::Data<Arc<RwLock<AttestationService>>>,
 ) -> Result<HttpResponse> {
-    info!("get_challenge API called.");
+    info!("Get Challenge API called.");
     let request: ChallengeRequest = request.into_inner();
 
-    debug!("get_challenge: {request:#?}");
+    debug!("Get challenge request: {request:#?}");
     let inner_tee = request
         .inner
         .get("tee")
@@ -215,28 +219,20 @@ pub async fn get_challenge(
         .generate_supplemental_challenge(tee, tee_params.to_string())
         .await
         .context("generate challenge")?;
+
+    debug!("Generated challenge: {:?}", challenge);
     Ok(HttpResponse::Ok().body(challenge))
 }
 
-/// GET /policy
-/// GET /policy/{policy_id}
-///
-/// The returned body would look like
-/// ```json
-/// [
-///     {"policy-id": <id-1>, "policy-hash": <hash-1>},
-///     {"policy-id": <id-2>, "policy-hash": <hash-2>},
-///     ...
-/// ]
-/// ```
 pub async fn get_policies(
     request: HttpRequest,
     cocoas: web::Data<Arc<RwLock<AttestationService>>>,
 ) -> Result<HttpResponse> {
-    info!("get policy.");
+    info!("Get Policy API called.");
 
     match request.match_info().get("policy_id") {
         Some(policy_id) => {
+            debug!("Getting policy with id: {}", policy_id);
             let policy = cocoas
                 .read()
                 .await
@@ -260,6 +256,7 @@ pub async fn get_policies(
             let policy_list =
                 serde_json::to_string(&policy_list).context("serialize response body")?;
 
+            debug!("Policy list: {:#?}", policy_list);
             Ok(HttpResponse::Ok().body(policy_list))
         }
     }
@@ -269,3 +266,4 @@ pub async fn get_policies(
 pub struct RemovePolicyRequest {
     pub policy_ids: Vec<String>,
 }
+

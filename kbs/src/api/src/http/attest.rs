@@ -26,16 +26,30 @@ pub(crate) async fn auth(
     let challenge = attestation_service
         .generate_challenge(request.tee, request.extra_params.clone())
         .await
-        .map_err(|e| Error::FailedAuthentication(format!("generate challenge: {e:?}")))?;
+        .map_err(|e| {
+            error!("Failed to generate challenge: {:?}", e);
+            Error::FailedAuthentication(format!("generate challenge: {e:?}"))
+        })?;
+
+    debug!("Generated challenge: {:?}", challenge);
 
     let session = SessionStatus::auth(request.0, **timeout, challenge)
-        .map_err(|e| Error::FailedAuthentication(format!("Session: {e}")))?;
+        .map_err(|e| {
+            error!("Failed to authenticate session: {:?}", e);
+            Error::FailedAuthentication(format!("Session: {e}"))
+        })?;
+
+    debug!("Session created: ID={}, timeout={:?}", session.id(), session.timeout());
 
     let response = HttpResponse::Ok()
         .cookie(session.cookie())
         .json(session.challenge());
 
+    debug!("Sending response with session challenge: {:?}", session.challenge());
+
     map.insert(session);
+
+    info!("Session inserted into the session map.");
 
     Ok(response)
 }
@@ -48,31 +62,44 @@ pub(crate) async fn attest(
     attestation_service: web::Data<Arc<AttestationService>>,
 ) -> Result<HttpResponse> {
     info!("Attest API called.");
-    let cookie = request.cookie(KBS_SESSION_ID).ok_or(Error::MissingCookie)?;
+    debug!("Attestation request: {:?}", attestation);
+
+    let cookie = request.cookie(KBS_SESSION_ID).ok_or_else(|| {
+        error!("Missing session cookie.");
+        Error::MissingCookie
+    })?;
+    debug!("Found session cookie: {:?}", cookie);
 
     let (tee, nonce) = {
         let session = map
             .sessions
             .get_async(cookie.value())
             .await
-            .ok_or(Error::InvalidCookie)?;
+            .ok_or_else(|| {
+                error!("Invalid session cookie: {}", cookie.value());
+                Error::InvalidCookie
+            })?;
         let session = session.get();
 
-        debug!("Session ID {}", session.id());
+        debug!("Session ID: {}", session.id());
 
         if session.is_expired() {
+            error!("Session has expired: ID={}", session.id());
             raise_error!(Error::ExpiredCookie);
         }
 
         if let SessionStatus::Attested { token, .. } = session {
             debug!(
-                "Session {} is already attested. Skip attestation and return the old token",
+                "Session {} is already attested. Returning the old token.",
                 session.id()
             );
             let body = serde_json::to_string(&json!({
                 "token": token,
             }))
-            .map_err(|e| Error::TokenIssueFailed(format!("Serialize token failed {e}")))?;
+            .map_err(|e| {
+                error!("Failed to serialize token: {:?}", e);
+                Error::TokenIssueFailed(format!("Serialize token failed {e}"))
+            })?;
 
             return Ok(HttpResponse::Ok()
                 .cookie(session.cookie())
@@ -81,42 +108,71 @@ pub(crate) async fn attest(
         }
 
         let attestation_str = serde_json::to_string_pretty(&attestation.0)
-            .map_err(|_| Error::AttestationFailed("Failed to serialize Attestation".into()))?;
-        debug!("Attestation: {attestation_str}");
+            .map_err(|e| {
+                error!("Failed to serialize attestation: {:?}", e);
+                Error::AttestationFailed("Failed to serialize Attestation".into())
+            })?;
+        debug!("Serialized attestation: {attestation_str}");
 
         (session.request().tee, session.challenge().nonce.to_string())
     };
 
     let attestation_str = serde_json::to_string(&attestation)
-        .map_err(|e| Error::AttestationFailed(format!("serialize attestation failed : {e:?}")))?;
+        .map_err(|e| {
+            error!("Failed to serialize attestation: {:?}", e);
+            Error::AttestationFailed(format!("serialize attestation failed : {e:?}"))
+        })?;
+    debug!("Serialized attestation for verification: {}", attestation_str);
+
     let token = attestation_service
         .verify(tee, &nonce, &attestation_str)
         .await
-        .map_err(|e| Error::AttestationFailed(format!("{e:?}")))?;
+        .map_err(|e| {
+            error!("Attestation verification failed: {:?}", e);
+            Error::AttestationFailed(format!("{e:?}"))
+        })?;
+    debug!("Attestation verification successful. Token generated: {}", token);
 
     let claims_b64 = token
         .split('.')
         .nth(1)
-        .ok_or_else(|| Error::TokenIssueFailed("Illegal token format".to_string()))?;
+        .ok_or_else(|| {
+            error!("Illegal token format: {}", token);
+            Error::TokenIssueFailed("Illegal token format".to_string())
+        })?;
     let claims = String::from_utf8(
         URL_SAFE_NO_PAD
             .decode(claims_b64)
-            .map_err(|e| Error::TokenIssueFailed(format!("Illegal token base64 claims: {e}")))?,
+            .map_err(|e| {
+                error!("Illegal token base64 claims: {:?}", e);
+                Error::TokenIssueFailed(format!("Illegal token base64 claims: {e}"))
+            })?,
     )
-    .map_err(|e| Error::TokenIssueFailed(format!("Illegal token base64 claims: {e}")))?;
+    .map_err(|e| {
+        error!("Failed to convert base64 claims to string: {:?}", e);
+        Error::TokenIssueFailed(format!("Illegal token base64 claims: {e}"))
+    })?;
+    debug!("Decoded token claims: {}", claims);
 
     let mut session = map
         .sessions
         .get_async(cookie.value())
         .await
-        .ok_or(Error::InvalidCookie)?;
+        .ok_or_else(|| {
+            error!("Invalid session cookie during update: {}", cookie.value());
+            Error::InvalidCookie
+        })?;
     let session = session.get_mut();
 
     let body = serde_json::to_string(&json!({
         "token": token,
     }))
-    .map_err(|e| Error::TokenIssueFailed(format!("Serialize token failed {e}")))?;
+    .map_err(|e| {
+        error!("Failed to serialize token for response: {:?}", e);
+        Error::TokenIssueFailed(format!("Serialize token failed {e}"))
+    })?;
 
+    debug!("Session attested successfully. Token: {}", token);
     session.attest(claims, token);
 
     Ok(HttpResponse::Ok()
@@ -124,3 +180,4 @@ pub(crate) async fn attest(
         .content_type("application/json")
         .body(body))
 }
+

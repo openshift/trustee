@@ -5,6 +5,7 @@
 
 use crate::TeeEvidenceParsedClaim;
 use anyhow::{anyhow, bail, Context, Result};
+
 use core::result::Result::Ok;
 use log::{debug, info, warn};
 use openssl::encrypt::{Decrypter, Encrypter};
@@ -20,6 +21,7 @@ use pv::uv::ConfigUid;
 use serde::{Deserialize, Serialize};
 use serde_with::{base64::Base64, hex::Hex, serde_as};
 use std::{env, fs};
+use std::path::Path;
 
 const DEFAULT_CERTS_OFFLINE_VERIFICATION: &str = "false";
 
@@ -122,21 +124,40 @@ pub struct SeVerifierImpl {
     public_key: PKey<Public>,
 }
 
+
 impl SeVerifierImpl {
     pub fn new() -> Result<Self> {
         let pri_key_file = env_or_default!(
             "SE_MEASUREMENT_ENCR_KEY_PRIVATE",
             DEFAULT_SE_MEASUREMENT_ENCR_KEY_PRIVATE
         );
-        let priv_contents = fs::read(pri_key_file)?;
-        let private_key = PKey::private_key_from_pem(&priv_contents)?;
+        if !Path::new(&pri_key_file).exists() {
+            bail!("Private key file does not exist: {}", pri_key_file);
+        } else {
+            println!("Private key file exists: {}", pri_key_file);
+        }
+
+
+        let priv_contents = fs::read(&pri_key_file)
+            .with_context(|| format!("Failed to read private key file: {}", pri_key_file))?;
+        let private_key = PKey::private_key_from_pem(&priv_contents)
+            .context("Failed to parse private key PEM")?;
 
         let pub_key_file = env_or_default!(
             "SE_MEASUREMENT_ENCR_KEY_PUBLIC",
             DEFAULT_SE_MEASUREMENT_ENCR_KEY_PUBLIC
         );
-        let pub_contents = fs::read(pub_key_file)?;
-        let public_key = PKey::public_key_from_pem(&pub_contents)?;
+
+        if !Path::new(&pub_key_file).exists() {
+           bail!("Public key file does not exist: {}", pub_key_file);
+        } else {
+            println!("Public key file exists: {}", pub_key_file);
+        }
+
+        let pub_contents = fs::read(&pub_key_file)
+            .with_context(|| format!("Failed to read public key file: {}", pub_key_file))?;
+        let public_key = PKey::public_key_from_pem(&pub_contents)
+            .context("Failed to parse public key PEM")?;
 
         Ok(Self {
             private_key,
