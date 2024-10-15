@@ -15,7 +15,7 @@ use crate::token::AttestationTokenBroker;
 use anyhow::{anyhow, Context, Result};
 use config::Config;
 pub use kbs_types::{Attestation, Tee};
-use log::{debug, info};
+use log::{debug, info, error};
 use policy_engine::{PolicyEngine, PolicyEngineType};
 use rvps::{RvpsApi, RvpsError};
 use serde_json::{json, Value};
@@ -168,92 +168,112 @@ impl AttestationService {
     /// not cause this function to return error. The result check against every policy will be included inside
     /// the finally Token returned by CoCo-AS.
     #[allow(clippy::too_many_arguments)]
-    pub async fn evaluate(
-        &self,
-        evidence: Vec<u8>,
-        tee: Tee,
-        runtime_data: Option<Data>,
-        runtime_data_hash_algorithm: HashAlgorithm,
-        init_data: Option<Data>,
-        init_data_hash_algorithm: HashAlgorithm,
-        policy_ids: Vec<String>,
-    ) -> Result<String> {
-        let verifier = verifier::to_verifier(&tee)?;
+// ... [rest of the code above remains unchanged]
 
-        let (report_data, runtime_data_claims) =
-            parse_data(runtime_data, &runtime_data_hash_algorithm).context("parse runtime data")?;
+pub async fn evaluate(
+    &self,
+    evidence: Vec<u8>,
+    tee: Tee,
+    runtime_data: Option<Data>,
+    runtime_data_hash_algorithm: HashAlgorithm,
+    init_data: Option<Data>,
+    init_data_hash_algorithm: HashAlgorithm,
+    policy_ids: Vec<String>,
+) -> Result<String> {
+    let verifier = verifier::to_verifier(&tee)?;
 
-        let report_data = match &report_data {
-            Some(data) => ReportData::Value(data),
-            None => ReportData::NotProvided,
-        };
+    let (report_data, runtime_data_claims) =
+        parse_data(runtime_data, &runtime_data_hash_algorithm).context("parse runtime data")?;
+    info!("Parsed runtime data claims: {:?}", runtime_data_claims);
 
-        let (init_data, init_data_claims) =
-            parse_data(init_data, &init_data_hash_algorithm).context("parse init data")?;
+    let report_data = match &report_data {
+        Some(data) => ReportData::Value(data),
+        None => ReportData::NotProvided,
+    };
 
-        let init_data_hash = match &init_data {
-            Some(data) => InitDataHash::Value(data),
-            None => InitDataHash::NotProvided,
-        };
+    let (init_data, init_data_claims) =
+        parse_data(init_data, &init_data_hash_algorithm).context("parse init data")?;
+    info!("Parsed init data claims: {:?}", init_data_claims);
 
-        let claims_from_tee_evidence = verifier
-            .evaluate(&evidence, &report_data, &init_data_hash)
-            .await
-            .map_err(|e| anyhow!("Verifier evaluate failed: {e:?}"))?;
-        info!("{:?} Verifier/endorsement check passed.", tee);
+    let init_data_hash = match &init_data {
+        Some(data) => InitDataHash::Value(data),
+        None => InitDataHash::NotProvided,
+    };
 
-        let flattened_claims = flatten_claims(tee, &claims_from_tee_evidence)?;
-        debug!("flattened_claims: {:#?}", flattened_claims);
+    // Log the evidence being evaluated
+    info!("Evaluating evidence: {:?}", evidence);
+    
+    let claims_from_tee_evidence = verifier
+        .evaluate(&evidence, &report_data, &init_data_hash)
+        .await
+        .map_err(|e| anyhow!("Verifier evaluate failed: {e:?}"))?;
+    info!("{:?} Verifier/endorsement check passed.", tee);
 
-        let tcb_json = serde_json::to_string(&flattened_claims)?;
+    let flattened_claims = flatten_claims(tee, &claims_from_tee_evidence)?;
+    debug!("Flattened claims: {:#?}", flattened_claims);
 
-        let reference_data_map = self
-            .get_reference_data(flattened_claims.keys())
-            .await
-            .map_err(|e| anyhow!("Generate reference data failed: {:?}", e))?;
-        debug!("reference_data_map: {:#?}", reference_data_map);
+    let tcb_json = serde_json::to_string(&flattened_claims)?;
+    info!("TCB JSON: {}", tcb_json);
 
-        let evaluation_report = self
-            .policy_engine
-            .evaluate(reference_data_map.clone(), tcb_json, policy_ids.clone())
-            .await
-            .map_err(|e| anyhow!("Policy Engine evaluation failed: {e}"))?;
+    let reference_data_map = self
+        .get_reference_data(flattened_claims.keys())
+        .await
+        .map_err(|e| anyhow!("Generate reference data failed: {:?}", e))?;
+    debug!("Reference data map: {:#?}", reference_data_map);
 
-        info!("Policy check passed.");
-        let policies: Vec<_> = evaluation_report
-            .into_iter()
-            .map(|(k, v)| {
-                json!({
-                    "policy-id": k,
-                    "policy-hash": v,
-                })
-            })
-            .collect();
+    let evaluation_report = self
+        .policy_engine
+        .evaluate(reference_data_map.clone(), tcb_json, policy_ids.clone())
+        .await
+        .map_err(|e| {
+            info!("Failed policy evaluation report: {:#?}", e);
+            anyhow!("Policy Engine evaluation failed: {e}")
+        })?;
 
-        let reference_data_map: HashMap<String, Vec<String>> = reference_data_map
-            .into_iter()
-            .filter(|it| !it.1.is_empty())
-            .collect();
+    info!("Policy evaluation report: {:#?}", evaluation_report);
 
-        let token_claims = json!({
-            "tee": to_variant_name(&tee)?,
-            "evaluation-reports": policies,
-            "tcb-status": flattened_claims,
-            "reference-data": reference_data_map,
-            "customized_claims": {
-                "init_data": init_data_claims,
-                "runtime_data": runtime_data_claims,
-            },
-        });
-
-        let attestation_results_token = self.token_broker.issue(token_claims)?;
-        info!(
-            "Attestation Token ({}) generated.",
-            self._config.attestation_token_broker
-        );
-
-        Ok(attestation_results_token)
+    // Check for denied policies and log them
+    for (policy_id, status) in &evaluation_report {
+        if status == "denied" {
+            error!("Policy evaluation denied for policy_id: {}", policy_id);
+        }
     }
+
+    info!("Policy check passed.");
+    let policies: Vec<_> = evaluation_report
+        .into_iter()
+        .map(|(k, v)| {
+            json!({
+                "policy-id": k,
+                "policy-hash": v,
+            })
+        })
+        .collect();
+
+    let reference_data_map: HashMap<String, Vec<String>> = reference_data_map
+        .into_iter()
+        .filter(|it| !it.1.is_empty())
+        .collect();
+
+    let token_claims = json!({
+        "tee": to_variant_name(&tee)?,
+        "evaluation-reports": policies,
+        "tcb-status": flattened_claims,
+        "reference-data": reference_data_map,
+        "customized_claims": {
+            "init_data": init_data_claims,
+            "runtime_data": runtime_data_claims,
+        },
+    });
+
+    let attestation_results_token = self.token_broker.issue(token_claims)?;
+    info!(
+        "Attestation Token ({}) generated.",
+        self._config.attestation_token_broker
+    );
+
+    Ok(attestation_results_token)
+}
 
     async fn get_reference_data<'a, I>(&self, tcb_claims: I) -> Result<HashMap<String, Vec<String>>>
     where

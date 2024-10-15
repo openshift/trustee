@@ -5,6 +5,7 @@
 
 use crate::TeeEvidenceParsedClaim;
 use anyhow::{anyhow, bail, Context, Result};
+
 use core::result::Result::Ok;
 use log::{debug, info, warn};
 use openssl::encrypt::{Decrypter, Encrypter};
@@ -20,6 +21,7 @@ use pv::uv::ConfigUid;
 use serde::{Deserialize, Serialize};
 use serde_with::{base64::Base64, hex::Hex, serde_as};
 use std::{env, fs};
+use std::path::Path;
 
 const DEFAULT_CERTS_OFFLINE_VERIFICATION: &str = "false";
 
@@ -122,21 +124,40 @@ pub struct SeVerifierImpl {
     public_key: PKey<Public>,
 }
 
+
 impl SeVerifierImpl {
     pub fn new() -> Result<Self> {
         let pri_key_file = env_or_default!(
             "SE_MEASUREMENT_ENCR_KEY_PRIVATE",
             DEFAULT_SE_MEASUREMENT_ENCR_KEY_PRIVATE
         );
-        let priv_contents = fs::read(pri_key_file)?;
-        let private_key = PKey::private_key_from_pem(&priv_contents)?;
+        if !Path::new(&pri_key_file).exists() {
+            bail!("Private key file does not exist: {}", pri_key_file);
+        } else {
+            println!("Private key file exists: {}", pri_key_file);
+        }
+
+
+        let priv_contents = fs::read(&pri_key_file)
+            .with_context(|| format!("Failed to read private key file: {}", pri_key_file))?;
+        let private_key = PKey::private_key_from_pem(&priv_contents)
+            .context("Failed to parse private key PEM")?;
 
         let pub_key_file = env_or_default!(
             "SE_MEASUREMENT_ENCR_KEY_PUBLIC",
             DEFAULT_SE_MEASUREMENT_ENCR_KEY_PUBLIC
         );
-        let pub_contents = fs::read(pub_key_file)?;
-        let public_key = PKey::public_key_from_pem(&pub_contents)?;
+
+        if !Path::new(&pub_key_file).exists() {
+           bail!("Public key file does not exist: {}", pub_key_file);
+        } else {
+            println!("Public key file exists: {}", pub_key_file);
+        }
+
+        let pub_contents = fs::read(&pub_key_file)
+            .with_context(|| format!("Failed to read public key file: {}", pub_key_file))?;
+        let public_key = PKey::public_key_from_pem(&pub_contents)
+            .context("Failed to parse public key PEM")?;
 
         Ok(Self {
             private_key,
@@ -226,99 +247,95 @@ impl SeVerifierImpl {
 
         serde_json::to_value(claims).context("build json value from the se claims")
     }
+pub async fn generate_supplemental_challenge(&self, _tee_parameters: String) -> Result<String> {
+    debug!("Starting the generation of supplemental challenge...");
 
-    pub async fn generate_supplemental_challenge(&self, _tee_parameters: String) -> Result<String> {
-        let se_certificate_root =
-            env_or_default!("SE_CERTIFICATES_ROOT", DEFAULT_SE_CERTIFICATES_ROOT);
-        let ca_certs = list_files_in_folder(&se_certificate_root)?;
+    let se_certificate_root = env_or_default!("SE_CERTIFICATES_ROOT", DEFAULT_SE_CERTIFICATES_ROOT);
+    debug!("Using certificate root: {}", se_certificate_root);
+    let ca_certs = list_files_in_folder(&se_certificate_root)?;
 
-        let crl_root = env_or_default!(
-            "SE_CERTIFICATE_REVOCATION_LISTS_ROOT",
-            DEFAULT_SE_CERTIFICATE_REVOCATION_LISTS_ROOT
-        );
-        let crls = list_files_in_folder(&crl_root)?;
+    let crl_root = env_or_default!("SE_CERTIFICATE_REVOCATION_LISTS_ROOT", DEFAULT_SE_CERTIFICATE_REVOCATION_LISTS_ROOT);
+    debug!("Using CRL root: {}", crl_root);
+    let crls = list_files_in_folder(&crl_root)?;
 
-        let root_ca_path =
-            env_or_default!("SE_CERTIFICATE_ROOT_CA", DEFAULT_SE_CERTIFICATE_ROOT_CA);
-        let ca_option: Option<String> = if std::path::Path::new(&root_ca_path).exists() {
-            Some(root_ca_path)
-        } else {
-            None::<String>
-        };
-        let offline_certs_verify = env_or_default!(
-            "CERTS_OFFLINE_VERIFICATION",
-            DEFAULT_CERTS_OFFLINE_VERIFICATION
-        );
-        let offline_certs_verify: bool = offline_certs_verify.parse::<bool>().unwrap_or(false);
-        let mut attestation_flags = AttestationFlags::default();
-        attestation_flags.set_image_phkh();
-        attestation_flags.set_attest_phkh();
-        let mut arcb = AttestationRequest::new(
-            AttestationVersion::One,
-            AttestationMeasAlg::HmacSha512,
-            attestation_flags,
-        )?;
+    let root_ca_path = env_or_default!("SE_CERTIFICATE_ROOT_CA", DEFAULT_SE_CERTIFICATE_ROOT_CA);
+    let ca_option: Option<String> = if std::path::Path::new(&root_ca_path).exists() {
+        Some(root_ca_path)
+    } else {
+        None::<String>
+    };
+    
+    debug!("Root CA path: {:?}", ca_option);
+    let offline_certs_verify = env_or_default!("CERTS_OFFLINE_VERIFICATION", DEFAULT_CERTS_OFFLINE_VERIFICATION);
+    let offline_certs_verify: bool = offline_certs_verify.parse::<bool>().unwrap_or(false);
+    debug!("Offline certs verification: {}", offline_certs_verify);
+    
+    let mut attestation_flags = AttestationFlags::default();
+    attestation_flags.set_image_phkh();
+    attestation_flags.set_attest_phkh();
+    
+    let mut arcb = AttestationRequest::new(AttestationVersion::One, AttestationMeasAlg::HmacSha512, attestation_flags)?;
+    debug!("Initialized AttestationRequest.");
 
-        let hkds_root = env_or_default!(
-            "DEFAULT_SE_HOST_KEY_DOCUMENTS_ROOT",
-            DEFAULT_SE_HOST_KEY_DOCUMENTS_ROOT
-        );
-        let hkds = list_files_in_folder(&hkds_root)?;
-        for hkd in &hkds {
-            let hk = std::fs::read(hkd).context("read host-key document")?;
-            let certs = read_certs(&hk)?;
-            if certs.is_empty() {
-                warn!("The host key document in '{hkd}' contains empty certificate!");
-            }
-            if certs.len() != 1 {
-                warn!("The host key document in '{hkd}' contains more than one certificate!")
-            }
-            let c = certs
-                .first()
-                .ok_or(anyhow!("File does not contain a X509 certificate"))?;
-            const DEFAULT_SE_SKIP_CERTS_VERIFICATION: &str = "false";
-            let skip_certs_env = env_or_default!(
-                "SE_SKIP_CERTS_VERIFICATION",
-                DEFAULT_SE_SKIP_CERTS_VERIFICATION
-            );
-            let skip_certs: bool = skip_certs_env.parse::<bool>().unwrap_or(false);
-            if !skip_certs {
-                let verifier = CertVerifier::new(
-                    ca_certs.as_slice(),
-                    crls.as_slice(),
-                    ca_option.clone(),
-                    offline_certs_verify,
-                )?;
-                verifier.verify(c)?;
-            }
-            arcb.add_hostkey(c.public_key()?);
+    let hkds_root = env_or_default!("DEFAULT_SE_HOST_KEY_DOCUMENTS_ROOT", DEFAULT_SE_HOST_KEY_DOCUMENTS_ROOT);
+    debug!("Using HKD root: {}", hkds_root);
+    let hkds = list_files_in_folder(&hkds_root)?;
+    
+    for hkd in &hkds {
+        debug!("Processing HKD: {}", hkd);
+        let hk = std::fs::read(hkd).context("read host-key document")?;
+        
+        let certs = read_certs(&hk)?;
+        if certs.is_empty() {
+            warn!("The host key document in '{}' contains empty certificate!", hkd);
         }
-
-        let encr_ctx = ReqEncrCtx::random(SymKeyType::Aes256)?;
-        let request_blob = arcb.encrypt(&encr_ctx)?;
-        let conf_data = arcb.confidential_data();
-        let encr_measurement_key = self.encrypt(conf_data.measurement_key())?;
-        let nonce = conf_data
-            .nonce()
-            .as_ref()
-            .ok_or(anyhow!("Failed to get nonce binding"))?
-            .value();
-        let encr_request_nonce = self.encrypt(nonce)?;
-
-        let se_img_hdr = env_or_default!("SE_IMAGE_HEADER_FILE", DEFAULT_SE_IMAGE_HEADER_FILE);
-        let mut hdr_file = open_file(se_img_hdr)?;
-        let image_hdr_tags = BootHdrTags::from_se_image(&mut hdr_file)?;
-
-        let se_attestation_request = SeAttestationRequest {
-            request_blob,
-            measurement_size: AttestationMeasAlg::HmacSha512.exp_size(),
-            additional_size: arcb.flags().expected_additional_size(),
-            encr_measurement_key,
-            encr_request_nonce,
-            image_hdr_tags,
-        };
-
-        let challenge = serde_json::to_string(&se_attestation_request)?;
-        Ok(challenge)
+        
+        if certs.len() != 1 {
+            warn!("The host key document in '{}' contains more than one certificate!", hkd);
+        }
+        
+        let c = certs.first().ok_or(anyhow!("File does not contain a X509 certificate"))?;
+        
+        const DEFAULT_SE_SKIP_CERTS_VERIFICATION: &str = "false";
+        let skip_certs_env = env_or_default!("SE_SKIP_CERTS_VERIFICATION", DEFAULT_SE_SKIP_CERTS_VERIFICATION);
+        let skip_certs: bool = skip_certs_env.parse::<bool>().unwrap_or(false);
+        
+        if !skip_certs {
+            let verifier = CertVerifier::new(ca_certs.as_slice(), crls.as_slice(), ca_option.clone(), offline_certs_verify)?;
+            debug!("Verifying certificate...");
+            verifier.verify(c)?;
+        }
+        
+        arcb.add_hostkey(c.public_key()?);
     }
+
+    let encr_ctx = ReqEncrCtx::random(SymKeyType::Aes256)?;
+    let request_blob = arcb.encrypt(&encr_ctx)?;
+    debug!("Encrypted request blob generated.");
+    
+    let conf_data = arcb.confidential_data();
+    let encr_measurement_key = self.encrypt(conf_data.measurement_key())?;
+    
+    let nonce = conf_data.nonce().as_ref().ok_or(anyhow!("Failed to get nonce binding"))?.value();
+    let encr_request_nonce = self.encrypt(nonce)?;
+    
+    let se_img_hdr = env_or_default!("SE_IMAGE_HEADER_FILE", DEFAULT_SE_IMAGE_HEADER_FILE);
+    let mut hdr_file = open_file(se_img_hdr)?;
+    let image_hdr_tags = BootHdrTags::from_se_image(&mut hdr_file)?;
+    
+    let se_attestation_request = SeAttestationRequest {
+        request_blob,
+        measurement_size: AttestationMeasAlg::HmacSha512.exp_size(),
+        additional_size: arcb.flags().expected_additional_size(),
+        encr_measurement_key,
+        encr_request_nonce,
+        image_hdr_tags,
+    };
+
+    let challenge = serde_json::to_string(&se_attestation_request)?;
+    debug!("Generated supplemental challenge: {}", challenge);
+
+    Ok(challenge)
+}
+
 }

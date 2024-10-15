@@ -10,7 +10,7 @@ use base64::{
     Engine,
 };
 use kbs_types::{Attestation, Challenge, Tee};
-use log::info;
+use log::{debug, error, info}; // Added debug and error logging
 use mobc::{Manager, Pool};
 use rand::{thread_rng, Rng};
 use serde::Deserialize;
@@ -64,7 +64,11 @@ impl GrpcClientPool {
             DEFAULT_POOL_SIZE
         });
 
-        info!("connect to remote AS [{as_addr}] with pool size {pool_size}");
+        info!("Connecting to remote AS at {as_addr} with pool size {pool_size}");
+
+        // Log configuration values
+        debug!("GrpcConfig: as_addr = {as_addr}, pool_size = {pool_size}");
+
         let manager = GrpcManager { as_addr };
         let pool = Mutex::new(Pool::builder().max_open(pool_size).build(manager));
 
@@ -75,25 +79,45 @@ impl GrpcClientPool {
 #[async_trait]
 impl Attest for GrpcClientPool {
     async fn set_policy(&self, policy_id: &str, policy: &str) -> Result<()> {
+        // Log the policy details before sending
+        debug!("Setting policy: policy_id = {policy_id}, policy = {policy}");
+
         let req = tonic::Request::new(SetPolicyRequest {
             policy_id: policy_id.to_string(),
             policy: policy.to_string(),
         });
 
-        let mut client = { self.pool.lock().await.get().await? };
+        let mut client = { 
+            self.pool.lock().await.get().await.map_err(|e| {
+                error!("Failed to get client from pool: {:?}", e);
+                e
+            })? 
+        };
+
+        // Log before making the call
+        info!("Sending set_policy request to attestation service");
 
         client
             .set_attestation_policy(req)
             .await
-            .map_err(|e| anyhow!("Set Policy Failed: {:?}", e))?;
+            .map_err(|e| {
+                error!("Set Policy Failed: {:?}", e);
+                anyhow!("Set Policy Failed: {:?}", e)
+            })?;
 
+        info!("Policy set successfully for policy_id = {policy_id}");
         Ok(())
     }
 
     async fn verify(&self, tee: Tee, nonce: &str, attestation: &str) -> Result<String> {
-        let attestation: Attestation = serde_json::from_str(attestation)?;
+        debug!("Verifying attestation: tee = {:?}, nonce = {}", tee, nonce);
 
-        // TODO: align with the guest-components/kbs-protocol side.
+        let attestation: Attestation = serde_json::from_str(attestation)
+            .map_err(|e| {
+                error!("Failed to deserialize attestation: {:?}", e);
+                e
+            })?;
+
         let runtime_data_plaintext = json!({"tee-pubkey": attestation.tee_pubkey, "nonce": nonce});
         let runtime_data_plaintext = serde_json::to_string(&runtime_data_plaintext)
             .context("CoCo AS client: serialize runtime data failed")?;
@@ -103,6 +127,10 @@ impl Attest for GrpcClientPool {
             .trim_end_matches('"')
             .trim_start_matches('"')
             .to_string();
+
+        // Log the serialized TEE data after it's processed
+        debug!("Serialized and cleaned TEE data: {tee}");
+
         let req = tonic::Request::new(AttestationRequest {
             tee,
             evidence: URL_SAFE_NO_PAD.encode(attestation.tee_evidence),
@@ -113,39 +141,79 @@ impl Attest for GrpcClientPool {
             policy_ids: vec!["default".to_string()],
         });
 
-        let mut client = { self.pool.lock().await.get().await? };
+        // Log the details of the attestation request
+        debug!(
+            "Prepared attestation request: tee = {}, evidence = {}, runtime_data = {:?}, policy_ids = {:?}",
+            req.get_ref().tee,
+            req.get_ref().evidence,
+            req.get_ref().runtime_data,
+            req.get_ref().policy_ids
+        );
+
+        let mut client = { 
+            self.pool.lock().await.get().await.map_err(|e| {
+                error!("Failed to get client from pool: {:?}", e);
+                e
+            })? 
+        };
+
+        info!("Sending attestation evaluation request");
 
         let token = client
             .attestation_evaluate(req)
-            .await?
+            .await
+            .map_err(|e| {
+                error!("Attestation Evaluation Failed: {:?}", e);
+                anyhow!("Attestation Evaluation Failed: {:?}", e)
+            })?
             .into_inner()
             .attestation_token;
+
+        info!("Attestation verified successfully, token received");
 
         Ok(token)
     }
 
     async fn generate_challenge(&self, tee: Tee, tee_parameters: String) -> Result<Challenge> {
+        info!("Generating challenge for TEE: {:?}", tee);
+
         let nonce = match tee {
             Tee::Se => {
                 let mut inner = HashMap::new();
                 inner.insert(String::from("tee"), String::from("se"));
                 inner.insert(String::from("tee_params"), tee_parameters);
+
                 let req = tonic::Request::new(ChallengeRequest { inner });
 
-                let mut client = { self.pool.lock().await.get().await? };
+                let mut client = { 
+                    self.pool.lock().await.get().await.map_err(|e| {
+                        error!("Failed to get client from pool: {:?}", e);
+                        e
+                    })? 
+                };
+
+                info!("Sending challenge request for SE");
 
                 client
                     .get_attestation_challenge(req)
-                    .await?
+                    .await
+                    .map_err(|e| {
+                        error!("Challenge Request Failed: {:?}", e);
+                        anyhow!("Challenge Request Failed: {:?}", e)
+                    })?
                     .into_inner()
                     .attestation_challenge
             }
             _ => {
                 let mut nonce: Vec<u8> = vec![0; 32];
-
                 thread_rng()
                     .try_fill(&mut nonce[..])
-                    .map_err(anyhow::Error::from)?;
+                    .map_err(|e| {
+                        error!("Failed to generate random nonce: {:?}", e);
+                        e
+                    })?;
+
+                info!("Generated random nonce for challenge");
 
                 STANDARD.encode(&nonce)
             }
@@ -155,6 +223,8 @@ impl Attest for GrpcClientPool {
             nonce,
             extra_params: String::new(),
         };
+
+        debug!("Generated challenge: nonce = {}", challenge.nonce);
 
         Ok(challenge)
     }
@@ -178,3 +248,4 @@ impl Manager for GrpcManager {
         std::result::Result::Ok(conn)
     }
 }
+

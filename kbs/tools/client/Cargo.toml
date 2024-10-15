@@ -28,3 +28,12 @@ tokio.workspace = true
 [features]
 default = ["kbs_protocol/default"]
 sample_only = ["kbs_protocol/background_check", "kbs_protocol/passport", "kbs_protocol/rust-crypto"]
+
+[profile.dev]
+opt-level = 0  # No optimization
+debug = true   # This should be true for debug builds
+
+[profile.release]
+opt-level = 3  # Optimization level
+debug = true   # This should be true for release builds
+
