@@ -58,3 +58,11 @@ assert-json-diff.workspace = true
 rstest.workspace = true
 serial_test.workspace = true
 tokio.workspace = true
+
+[profile.dev]
+opt-level = 0  # No optimization
+debug = true   # This should be true for debug builds
+
+[profile.release]
+opt-level = 3  # Optimization level
+debug = true   # This should be true for release builds

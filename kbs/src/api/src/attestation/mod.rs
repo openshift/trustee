@@ -72,60 +72,91 @@ impl AttestationService {
     /// Create and initialize AttestationService.
     #[cfg(any(feature = "coco-as-builtin", feature = "coco-as-builtin-no-verifier"))]
     pub async fn new(config: AsConfig) -> Result<Self> {
+        log::info!("Creating new BuiltIn CoCo Attestation Service...");
         let built_in_as = coco::builtin::BuiltInCoCoAs::new(config).await?;
+        log::debug!("Successfully created BuiltIn CoCo Attestation Service.");
         Ok(Self::CoCoASBuiltIn(built_in_as))
     }
 
     /// Create and initialize AttestationService.
     #[cfg(feature = "coco-as-grpc")]
     pub async fn new(config: GrpcConfig) -> Result<Self> {
+        log::info!("Creating new gRPC CoCo Attestation Service...");
         let pool = GrpcClientPool::new(config).await?;
+        log::debug!("Successfully created gRPC CoCo Attestation Service.");
         Ok(Self::CoCoASgRPC(pool))
     }
 
     /// Create and initialize AttestationService.
     #[cfg(feature = "intel-trust-authority-as")]
     pub fn new(config: IntelTrustAuthorityConfig) -> Result<Self> {
+        log::info!("Creating new Intel Trust Authority Attestation Service...");
         let ta_client = intel_trust_authority::IntelTrustAuthority::new(config)?;
+        log::debug!("Successfully created Intel Trust Authority Attestation Service.");
         Ok(Self::IntelTA(ta_client))
     }
 
     pub async fn verify(&self, tee: Tee, nonce: &str, attestation: &str) -> Result<String> {
+        log::info!("Verifying attestation evidence with TEE: {:?}, Nonce: {:?}", tee, nonce);
         match self {
             #[cfg(feature = "coco-as-grpc")]
-            AttestationService::CoCoASgRPC(inner) => inner.verify(tee, nonce, attestation).await,
+            AttestationService::CoCoASgRPC(inner) => {
+                log::debug!("Using gRPC CoCo attestation service for verification.");
+                inner.verify(tee, nonce, attestation).await
+            }
             #[cfg(any(feature = "coco-as-builtin", feature = "coco-as-builtin-no-verifier"))]
-            AttestationService::CoCoASBuiltIn(inner) => inner.verify(tee, nonce, attestation).await,
+            AttestationService::CoCoASBuiltIn(inner) => {
+                log::debug!("Using BuiltIn CoCo attestation service for verification.");
+                inner.verify(tee, nonce, attestation).await
+            }
             #[cfg(feature = "intel-trust-authority-as")]
-            AttestationService::IntelTA(inner) => inner.verify(tee, nonce, attestation).await,
+            AttestationService::IntelTA(inner) => {
+                log::debug!("Using Intel Trust Authority attestation service for verification.");
+                inner.verify(tee, nonce, attestation).await
+            }
         }
     }
 
     pub async fn set_policy(&self, policy_id: &str, policy: &str) -> Result<()> {
+        log::info!("Setting policy with ID: {}", policy_id);
         match self {
             #[cfg(feature = "coco-as-grpc")]
-            AttestationService::CoCoASgRPC(inner) => inner.set_policy(policy_id, policy).await,
+            AttestationService::CoCoASgRPC(inner) => {
+                log::debug!("Using gRPC CoCo attestation service for setting policy.");
+                inner.set_policy(policy_id, policy).await
+            }
             #[cfg(any(feature = "coco-as-builtin", feature = "coco-as-builtin-no-verifier"))]
-            AttestationService::CoCoASBuiltIn(inner) => inner.set_policy(policy_id, policy).await,
+            AttestationService::CoCoASBuiltIn(inner) => {
+                log::debug!("Using BuiltIn CoCo attestation service for setting policy.");
+                inner.set_policy(policy_id, policy).await
+            }
             #[cfg(feature = "intel-trust-authority-as")]
-            AttestationService::IntelTA(inner) => inner.set_policy(policy_id, policy).await,
+            AttestationService::IntelTA(inner) => {
+                log::debug!("Using Intel Trust Authority attestation service for setting policy.");
+                inner.set_policy(policy_id, policy).await
+            }
         }
     }
 
     pub async fn generate_challenge(&self, tee: Tee, tee_parameters: String) -> Result<Challenge> {
+        log::info!("Generating challenge for TEE: {:?} with parameters: {}", tee, tee_parameters);
         match self {
             #[cfg(feature = "coco-as-grpc")]
             AttestationService::CoCoASgRPC(inner) => {
+                log::debug!("Using gRPC CoCo attestation service for challenge generation.");
                 inner.generate_challenge(tee, tee_parameters).await
             }
             #[cfg(any(feature = "coco-as-builtin", feature = "coco-as-builtin-no-verifier"))]
             AttestationService::CoCoASBuiltIn(inner) => {
+                log::debug!("Using BuiltIn CoCo attestation service for challenge generation.");
                 inner.generate_challenge(tee, tee_parameters).await
             }
             #[cfg(feature = "intel-trust-authority-as")]
             AttestationService::IntelTA(inner) => {
+                log::debug!("Using Intel Trust Authority attestation service for challenge generation.");
                 inner.generate_challenge(tee, tee_parameters).await
             }
         }
     }
 }
+

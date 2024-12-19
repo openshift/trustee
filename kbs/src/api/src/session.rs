@@ -8,7 +8,7 @@ use actix_web::cookie::{
 };
 use anyhow::{bail, Result};
 use kbs_types::{Challenge, Request};
-use log::warn;
+use log::{debug, warn};
 use semver::Version;
 use uuid::Uuid;
 
@@ -52,13 +52,21 @@ macro_rules! impl_member {
 
 impl SessionStatus {
     pub fn auth(request: Request, timeout: i64, challenge: Challenge) -> Result<Self> {
+        debug!("Starting authentication with request: {:?}", request);
+
         let version = Version::parse(&request.version).map_err(anyhow::Error::from)?;
+        debug!("Parsed version: {}", version);
+
         if !crate::VERSION_REQ.matches(&version) {
             bail!("Invalid Request version {}", request.version);
         }
+        debug!("Request version is valid.");
+
         let id = Uuid::new_v4().as_simple().to_string();
+        debug!("Generated session ID: {}", id);
 
         let timeout = OffsetDateTime::now_utc() + Duration::minutes(timeout);
+        debug!("Session timeout set to: {:?}", timeout);
 
         Ok(Self::Authed {
             request,
@@ -69,11 +77,16 @@ impl SessionStatus {
     }
 
     pub fn cookie<'a>(&self) -> Cookie<'a> {
+        debug!("Generating cookie for session.");
         match self {
-            SessionStatus::Authed { id, timeout, .. } => Cookie::build(KBS_SESSION_ID, id.clone())
-                .expires(*timeout)
-                .finish(),
+            SessionStatus::Authed { id, timeout, .. } => {
+                debug!("Authed session cookie: id={}, timeout={:?}", id, timeout);
+                Cookie::build(KBS_SESSION_ID, id.clone())
+                    .expires(*timeout)
+                    .finish()
+            }
             SessionStatus::Attested { id, timeout, .. } => {
+                debug!("Attested session cookie: id={}, timeout={:?}", id, timeout);
                 Cookie::build(KBS_SESSION_ID, id.clone())
                     .expires(*timeout)
                     .finish()
@@ -87,12 +100,15 @@ impl SessionStatus {
     impl_member!(timeout, OffsetDateTime);
 
     pub fn is_expired(&self) -> bool {
-        return *self.timeout() < OffsetDateTime::now_utc();
+        let expired = *self.timeout() < OffsetDateTime::now_utc();
+        debug!("Session expired check: expired={}", expired);
+        expired
     }
 
     pub fn attest(&mut self, attestation_claims: String, token: String) {
         match self {
             SessionStatus::Authed { id, timeout, .. } => {
+                debug!("Attesting session: id={}, claims={}, token={}", id, attestation_claims, token);
                 *self = SessionStatus::Attested {
                     attestation_claims,
                     token,
@@ -101,7 +117,7 @@ impl SessionStatus {
                 };
             }
             SessionStatus::Attested { .. } => {
-                warn!("session already attested.");
+                warn!("Session already attested.");
             }
         }
     }
@@ -113,12 +129,15 @@ pub(crate) struct SessionMap {
 
 impl SessionMap {
     pub fn new() -> Self {
+        debug!("Creating new SessionMap.");
         SessionMap {
             sessions: scc::HashMap::new(),
         }
     }
 
     pub fn insert(&self, session: SessionStatus) {
+        debug!("Inserting session into map: id={}", session.id());
         let _ = self.sessions.insert(session.id().to_string(), session);
     }
 }
+

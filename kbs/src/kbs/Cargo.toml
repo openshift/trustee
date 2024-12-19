@@ -26,3 +26,12 @@ env_logger.workspace = true
 log.workspace = true
 tokio.workspace = true
 cfg-if.workspace = true
+
+[profile.dev]
+opt-level = 0  # No optimization
+debug = true   # This should be true for debug builds
+
+[profile.release]
+opt-level = 3  # Optimization level
+debug = true   # This should be true for release builds
+
