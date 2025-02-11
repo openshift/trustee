@@ -48,3 +48,11 @@ tokio = { version = "1.23.0", features = ["full"] }
 tempfile = "3.4.0"
 tonic = "0.8.1"
 tonic-build = "0.8.0"
+
+[profile.dev]
+opt-level = 0  # No optimization
+debug = true   # This should be true for debug builds
+
+[profile.release]
+opt-level = 3  # Optimization level
+debug = true   # This should be true for release builds

@@ -1,5 +1,4 @@
 use std::cmp::Ordering;
-
 use anyhow::*;
 use async_trait::async_trait;
 use kbs_types::Tee;
@@ -32,82 +31,110 @@ pub mod cca;
 pub mod se;
 
 pub fn to_verifier(tee: &Tee) -> Result<Box<dyn Verifier + Send + Sync>> {
+    debug!("Attempting to map TEE {:?} to a verifier implementation", tee);
     match tee {
-        Tee::Sev => todo!(),
+        Tee::Sev => {
+            debug!("SEV support is currently not implemented");
+            todo!()
+        }
         Tee::AzSnpVtpm => {
+            debug!("Attempting to initialize AZ SNP vTPM verifier");
             cfg_if::cfg_if! {
                 if #[cfg(feature = "az-snp-vtpm-verifier")] {
                     let verifier = az_snp_vtpm::AzSnpVtpm::new()?;
+                    debug!("AZ SNP vTPM verifier initialized successfully");
                     Ok(Box::new(verifier) as Box<dyn Verifier + Send + Sync>)
                 } else {
+                    debug!("AZ SNP vTPM verifier feature is not enabled");
                     bail!("feature `az-snp-vtpm-verifier` is not enabled for `verifier` crate.")
                 }
             }
         }
         Tee::AzTdxVtpm => {
+            debug!("Attempting to initialize AZ TDX vTPM verifier");
             cfg_if::cfg_if! {
                 if #[cfg(feature = "az-tdx-vtpm-verifier")] {
+                    debug!("AZ TDX vTPM verifier initialized successfully");
                     Ok(Box::<az_tdx_vtpm::AzTdxVtpm>::default() as Box<dyn Verifier + Send + Sync>)
                 } else {
+                    debug!("AZ TDX vTPM verifier feature is not enabled");
                     bail!("feature `az-tdx-vtpm-verifier` is not enabled for `verifier` crate.");
                 }
             }
         }
         Tee::Tdx => {
+            debug!("Attempting to initialize TDX verifier");
             cfg_if::cfg_if! {
                 if #[cfg(feature = "tdx-verifier")] {
+                    debug!("TDX verifier initialized successfully");
                     Ok(Box::<tdx::Tdx>::default() as Box<dyn Verifier + Send + Sync>)
                 } else {
+                    debug!("TDX verifier feature is not enabled");
                     bail!("feature `tdx-verifier` is not enabled for `verifier` crate.")
                 }
             }
         }
         Tee::Snp => {
+            debug!("Attempting to initialize SNP verifier");
             cfg_if::cfg_if! {
                 if #[cfg(feature = "snp-verifier")] {
                     let verifier = snp::Snp::new()?;
+                    debug!("SNP verifier initialized successfully");
                     Ok(Box::new(verifier) as Box<dyn Verifier + Send + Sync>)
                 } else {
+                    debug!("SNP verifier feature is not enabled");
                     bail!("feature `snp-verifier` is not enabled for `verifier` crate.")
                 }
             }
         }
-        Tee::Sample => Ok(Box::<sample::Sample>::default() as Box<dyn Verifier + Send + Sync>),
+        Tee::Sample => {
+            debug!("Using Sample verifier");
+            Ok(Box::<sample::Sample>::default() as Box<dyn Verifier + Send + Sync>)
+        }
         Tee::Sgx => {
+            debug!("Attempting to initialize SGX verifier");
             cfg_if::cfg_if! {
                 if #[cfg(feature = "sgx-verifier")] {
+                    debug!("SGX verifier initialized successfully");
                     Ok(Box::<sgx::SgxVerifier>::default() as Box<dyn Verifier + Send + Sync>)
                 } else {
+                    debug!("SGX verifier feature is not enabled");
                     bail!("feature `sgx-verifier` is not enabled for `verifier` crate.")
                 }
             }
         }
-
         Tee::Csv => {
+            debug!("Attempting to initialize CSV verifier");
             cfg_if::cfg_if! {
                 if #[cfg(feature = "csv-verifier")] {
+                    debug!("CSV verifier initialized successfully");
                     Ok(Box::<csv::CsvVerifier>::default() as Box<dyn Verifier + Send + Sync>)
                 } else {
+                    debug!("CSV verifier feature is not enabled");
                     bail!("feature `csv-verifier` is not enabled for `verifier` crate.")
                 }
             }
         }
-
         Tee::Cca => {
+            debug!("Attempting to initialize CCA verifier");
             cfg_if::cfg_if! {
                 if #[cfg(feature = "cca-verifier")] {
+                    debug!("CCA verifier initialized successfully");
                     Ok(Box::<cca::CCA>::default() as Box<dyn Verifier + Send + Sync>)
                 } else {
+                    debug!("CCA verifier feature is not enabled");
                     bail!("feature `cca-verifier` is not enabled for `verifier` crate.")
                 }
             }
         }
-
         Tee::Se => {
+            debug!("Attempting to initialize SE verifier");
             cfg_if::cfg_if! {
                 if #[cfg(feature = "se-verifier")] {
+                    debug!("SE verifier initialized successfully");
                     Ok(Box::<se::SeVerifier>::default() as Box<dyn Verifier + Send + Sync>)
                 } else {
+                    debug!("SE verifier feature is not enabled");
                     bail!("feature `se-verifier` is not enabled for `verifier` crate.")
                 }
             }
@@ -130,35 +157,6 @@ pub enum InitDataHash<'a> {
 #[async_trait]
 pub trait Verifier {
     /// Verify the hardware signature.
-    ///
-    ///
-    /// `evidence` is a bytes slice of TEE evidence. Please note that
-    /// it might not be the raw attestation quote/evidence from hardware.
-    /// On some platforms they are wrapped by some extra context information.
-    /// Please see the concrete verifier implementations to check the format.
-    ///
-    ///
-    /// If `report_data` is given, the binding of the `report_data`
-    /// against the `report_data` inside the hardware evidence will
-    /// be checked. So do `init_data_hash`.
-    ///
-    ///
-    /// Semantically, a `report_data` is a byte slice given when
-    /// a hardware evidence is generated. The `report_data` will be
-    /// included inside the hardware evidence, thus its integrity will
-    /// be protected by the signature of the hardware.
-    ///
-    ///
-    /// A `init_data_hash` is another byte slice given when the TEE
-    /// instance is created. It is always provided by untrusted host,
-    /// but its integrity will be protected by the tee evidence.
-    /// Typical `init_data_hash` is `HOSTDATA` for SNP.
-    ///
-    ///
-    /// There will be two claims by default regardless of architectures:
-    /// - `init_data_hash`: init data hash of the evidence
-    /// - `report_data`: report data of the evidence
-    /// TODO: See https://github.com/confidential-containers/trustee/issues/228
     async fn evaluate(
         &self,
         evidence: &[u8],
@@ -167,13 +165,8 @@ pub trait Verifier {
     ) -> Result<TeeEvidenceParsedClaim>;
 
     /// Generate the supplemental challenge
-    ///
-    /// Some TEE like IBM SE need a `challenge` generated on verifier side
-    /// and pass it to attester side. This challenge is used by attester to
-    /// generate the evidence
-    ///
-    /// A optional `tee_parameters` comes from the attester side as the input.
     async fn generate_supplemental_challenge(&self, _tee_parameters: String) -> Result<String> {
+        debug!("Generating supplemental challenge");
         Ok(String::new())
     }
 }
@@ -183,15 +176,23 @@ fn regularize_data(data: &[u8], len: usize, data_name: &str, arch: &str) -> Vec<
     let data_len = data.len();
     match data_len.cmp(&len) {
         Ordering::Less => {
-            debug!("The input {data_name} of {arch} is shorter than {len} bytes, will be padded with '\\0'.");
+            debug!(
+                "The input {data_name} of {arch} is shorter than {len} bytes, padding with '\\0'."
+            );
             let mut data = data.to_vec();
             data.resize(len, b'\0');
             data
         }
-        Ordering::Equal => data.to_vec(),
+        Ordering::Equal => {
+            debug!("The input {data_name} of {arch} is exactly {len} bytes.");
+            data.to_vec()
+        }
         Ordering::Greater => {
-            debug!("The input {data_name} of {arch} is longer than {len} bytes, will be truncated to {len} bytes.");
+            debug!(
+                "The input {data_name} of {arch} is longer than {len} bytes, truncating to {len} bytes."
+            );
             data[..len].to_vec()
         }
     }
 }
+
