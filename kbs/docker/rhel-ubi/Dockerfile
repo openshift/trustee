@@ -1,6 +1,6 @@
 # Use CentOS Stream to build.
 FROM quay.io/centos/centos:stream9 AS builder
-
+ENV OPENSSL_NO_VENDOR=1
 # Install build dependencies from CentOS repos.
 RUN dnf -y --setopt=install_weak_deps=0 --enablerepo=crb install \
 cargo pkg-config perl-FindBin openssl-devel perl-lib perl-IPC-Cmd perl-File-Compare perl-File-Copy tpm2-tss-devel clang-devel protobuf-compiler \
@@ -17,7 +17,6 @@ WORKDIR /usr/src/kbs
 COPY . .
 ARG KBS_FEATURES=coco-as-builtin
 RUN \
-export OPENSSL_NO_VENDOR=1  && \
 cargo install --locked --root /usr/local/ --path kbs --bin kbs --no-default-features --features ${KBS_FEATURES} && \
 # Collect linked files necessary for the binary to run.
 mkdir -p /root/trustee/lib64 && \
