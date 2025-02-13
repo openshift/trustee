@@ -1,4 +1,4 @@
-FROM rust:1.78.0 AS builder
+FROM rust:1.84.1 AS builder
 ARG ARCH=x86_64
 
 WORKDIR /usr/src/kbs
