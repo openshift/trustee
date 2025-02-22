@@ -52,7 +52,7 @@ pub struct Snp {
 pub(crate) fn load_milan_cert_chain() -> &'static Result<VendorCertificates> {
     static MILAN_CERT_CHAIN: OnceLock<Result<VendorCertificates>> = OnceLock::new();
     MILAN_CERT_CHAIN.get_or_init(|| {
-        let certs = X509::stack_from_pem(include_bytes!("milan_ask_ark_asvk.pem"))?;
+        let certs = X509::stack_from_pem(include_bytes!("genoa_ask_ark_asvk.pem"))?;
         if certs.len() != 3 {
             bail!("Malformed Milan ASK/ARK/ASVK");
         }
@@ -69,6 +69,7 @@ pub(crate) fn load_milan_cert_chain() -> &'static Result<VendorCertificates> {
 pub(crate) fn verify_report_against_cache_entry(path: &Path, report: &AttestationReport, vendor_certs: &VendorCertificates) -> Result<()> {
     if !path.is_file() {
         bail!("{} is not a file", path.display())
+
     }
     let data = std::fs::read(path)
         .map_err(|e| anyhow!("{}: {}", path.display(), e))?;
@@ -398,7 +399,7 @@ async fn fetch_vcek_from_kds(att_report: &AttestationReport) -> Result<CertTable
     let hw_id: String = hex::encode(att_report.chip_id);
 
     let vcek_url: String = format!(
-        "{KDS_CERT_SITE}{KDS_VCEK}/Milan/\
+        "{KDS_CERT_SITE}{KDS_VCEK}/Genoa/\
         {hw_id}?blSPL={:02}&teeSPL={:02}&snpSPL={:02}&ucodeSPL={:02}",
         att_report.reported_tcb.bootloader,
         att_report.reported_tcb.tee,
