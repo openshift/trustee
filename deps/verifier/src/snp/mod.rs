@@ -18,7 +18,7 @@ use reqwest::{get, Response as ReqwestResponse, StatusCode};
 use serde_json::json;
 use sev::firmware::guest::AttestationReport;
 use sev::firmware::host::{CertTableEntry, CertType};
-use std::sync::OnceLock;
+use std::{path::Path, sync::OnceLock};
 use x509_parser::prelude::*;
 
 #[derive(Serialize, Deserialize)]
@@ -64,7 +64,7 @@ pub struct Snp {
 pub(crate) fn load_milan_cert_chain() -> &'static Result<VendorCertificates> {
     static MILAN_CERT_CHAIN: OnceLock<Result<VendorCertificates>> = OnceLock::new();
     MILAN_CERT_CHAIN.get_or_init(|| {
-        let certs = X509::stack_from_pem(include_bytes!("milan_ask_ark_asvk.pem"))?;
+        let certs = X509::stack_from_pem(include_bytes!("genoa_ask_ark_asvk.pem"))?;
         if certs.len() != 3 {
             bail!("Malformed Milan ASK/ARK/ASVK");
         }
@@ -76,6 +76,52 @@ pub(crate) fn load_milan_cert_chain() -> &'static Result<VendorCertificates> {
         };
         Ok(vendor_certs)
     })
+}
+
+pub(crate) fn verify_report_against_cache_entry(path: &Path, report: &AttestationReport, vendor_certs: &VendorCertificates) -> Result<()> {
+    if !path.is_file() {
+        bail!("{} is not a file", path.display())
+
+    }
+    let data = std::fs::read(path)
+        .map_err(|e| anyhow!("{}: {}", path.display(), e))?;
+
+    // Check if the file is a x509 DER certificate
+    let _ = X509::from_der(&data)
+        .map_err(|e| anyhow!("{}: {}", path.display(), e))?;
+
+    let cert_chain = vec![CertTableEntry::new(CertType::VCEK, data)];
+    verify_report_signature(report, &cert_chain, vendor_certs)
+        .map_err(|e| anyhow!("{}: {}", path.display(), e))?;
+
+    log::info!("{}: report signature verified", path.display());
+    Ok(())
+}
+
+pub(crate) fn verify_report_against_cache(report: &AttestationReport, vendor_certs: &VendorCertificates) -> Result<()> {
+    let vcek_dir = Path::new("/etc/kbs/snp/ek");
+
+    if !vcek_dir.is_dir() {
+        bail!("{} directory not found", vcek_dir.display());
+    }
+
+    for entry in std::fs::read_dir(vcek_dir)? {
+        let entry = match entry {
+            Result::Ok(de) => de,
+            Err(e) => {
+                log::warn!("{:?}", e);
+                continue;
+            },
+        };
+        let path = entry.path();
+        if let Err(e) = verify_report_against_cache_entry(&path, report, vendor_certs) {
+            log::warn!("{}", e);
+        } else {
+            return Ok(());
+        }
+    }
+
+    bail!("No cached certificate verifies the report");
 }
 
 impl Snp {
@@ -113,12 +159,18 @@ impl Verifier for Snp {
             cert_chain,
         } = serde_json::from_slice(evidence).context("Deserialize Quote failed.")?;
 
-        let cert_chain = match cert_chain {
-            Some(chain) if !chain.is_empty() => chain,
-            _ => fetch_vcek_from_kds(report).await?,
-        };
+        let mut cert_chain = cert_chain.unwrap_or_default();
 
-        verify_report_signature(&report, &cert_chain, &self.vendor_certs)?;
+        if cert_chain.iter().any(|e| e.cert_type == CertType::VCEK || e.cert_type == CertType::VLEK ) {
+            verify_report_signature(&report, &cert_chain, &self.vendor_certs)?;
+        } else {
+            if let Err(e) = verify_report_against_cache(&report, &self.vendor_certs) {
+                log::info!("{}", e);
+                let entry = fetch_vcek_from_kds(&report).await?;
+                cert_chain.push(entry);
+                verify_report_signature(&report, &cert_chain, &self.vendor_certs)?;
+            }
+        }
 
         // See Trustee Issue#589 https://github.com/confidential-containers/trustee/issues/589
         if report.version < REPORT_VERSION_MIN || report.version > REPORT_VERSION_MAX {
@@ -354,18 +406,21 @@ fn get_common_name(cert: &x509::X509) -> Result<String> {
 
 /// Asynchronously fetches the VCEK from the Key Distribution Service (KDS) using the provided attestation report.
 /// Returns the VCEK in DER format as part of a certificate table entry.
-async fn fetch_vcek_from_kds(att_report: AttestationReport) -> Result<Vec<CertTableEntry>> {
+async fn fetch_vcek_from_kds(att_report: &AttestationReport) -> Result<CertTableEntry> {
     // Use attestation report to get data for URL
     let hw_id: String = hex::encode(att_report.chip_id);
 
     let vcek_url: String = format!(
-        "{KDS_CERT_SITE}{KDS_VCEK}/Milan/\
+        "{KDS_CERT_SITE}{KDS_VCEK}/Genoa/\
         {hw_id}?blSPL={:02}&teeSPL={:02}&snpSPL={:02}&ucodeSPL={:02}",
         att_report.reported_tcb.bootloader,
         att_report.reported_tcb.tee,
         att_report.reported_tcb.snp,
         att_report.reported_tcb.microcode
     );
+
+    log::info!("VCEK_URL={:?}", &vcek_url);
+
     // VCEK in DER format
     let vcek_rsp: ReqwestResponse = get(vcek_url)
         .await
@@ -382,7 +437,7 @@ async fn fetch_vcek_from_kds(att_report: AttestationReport) -> Result<Vec<CertTa
                 cert_type: CertType::VCEK,
                 data: vcek_rsp_bytes,
             };
-            Ok(vec![key])
+            Ok(key)
         }
         status => Err(anyhow!("Unable to fetch VCEK from URL: {status:?}")),
     }
