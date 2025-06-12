@@ -397,6 +397,8 @@ spec:
           value: $(tasks.build-image-index.results.IMAGE_URL)
         - name: IMAGE
           value: $(params.output-image)
+        - name: image-digest
+          value: $(tasks.build-image-index.results.IMAGE_DIGEST)
         - name: DOCKERFILE
           value: $(params.dockerfile)
         - name: CONTEXT
