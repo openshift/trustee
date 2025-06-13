@@ -17,6 +17,7 @@ dnf -y update && \
 # Install packages.
 dnf -y --setopt=install_weak_deps=0 install \
   cargo pkg-config perl-FindBin openssl-devel perl-lib perl-IPC-Cmd perl-File-Compare perl-File-Copy clang-devel \
+  rust gcc \
   # These two are only available in the CodeReady Builder repo.
   tpm2-tss-devel protobuf-compiler \
   # This one is needed to build the stub.
