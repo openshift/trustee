@@ -2,7 +2,7 @@
 # Licensed under the Apache License, Version 2.0, see LICENSE for details.
 # SPDX-License-Identifier: Apache-2.0
 
-FROM --platform=$BUILDPLATFORM rust:latest AS builder
+FROM --platform=$BUILDPLATFORM docker.io/library/rust:latest AS builder
 ARG BUILDPLATFORM=linux/amd64
 ARG ARCH=x86_64
 
@@ -21,7 +21,7 @@ RUN if [ "$(uname -m)" != "${ARCH}" ]; then \
     export RUSTFLAGS="${RUSTFLAGS_ARGS}"; \
     apt-get install -y ${GCC_PACKAGE}; \
     rustup target add ${RUSTC_TARGET}; fi; \
-    cargo install --bin rvps --path rvps ${TARGET_FLAG}
+    cargo install --bin rvps --path rvps ${TARGET_FLAG} --locked
 
 FROM debian
 

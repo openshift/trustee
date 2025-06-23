@@ -1,39 +1,40 @@
 use anyhow::{Context, Result};
 use log::{debug, info};
-use reference_value_provider_service::{Config, Core};
 use std::net::SocketAddr;
 use std::sync::Arc;
-use tokio::sync::Mutex;
+use tokio::sync::RwLock;
 use tonic::transport::Server;
 use tonic::{Request, Response, Status};
 
-use crate::rvps_api::reference_value_provider_service_server::{
+use crate::{Config, Rvps};
+
+use crate::rvps_api::reference::reference_value_provider_service_server::{
     ReferenceValueProviderService, ReferenceValueProviderServiceServer,
 };
-use crate::rvps_api::{
+use crate::rvps_api::reference::{
     ReferenceValueQueryRequest, ReferenceValueQueryResponse, ReferenceValueRegisterRequest,
     ReferenceValueRegisterResponse,
 };
 
-pub struct RVPSServer {
-    rvps: Arc<Mutex<Core>>,
+pub struct RvpsServer {
+    rvps: Arc<RwLock<Rvps>>,
 }
 
-impl RVPSServer {
-    pub fn new(rvps: Arc<Mutex<Core>>) -> Self {
+impl RvpsServer {
+    pub fn new(rvps: Arc<RwLock<Rvps>>) -> Self {
         Self { rvps }
     }
 }
 
 #[tonic::async_trait]
-impl ReferenceValueProviderService for RVPSServer {
+impl ReferenceValueProviderService for RvpsServer {
     async fn query_reference_value(
         &self,
         _request: Request<ReferenceValueQueryRequest>,
     ) -> Result<Response<ReferenceValueQueryResponse>, Status> {
         let rvs = self
             .rvps
-            .lock()
+            .read()
             .await
             .get_digests()
             .await
@@ -58,7 +59,7 @@ impl ReferenceValueProviderService for RVPSServer {
         debug!("registry reference value: {}", request.message);
 
         self.rvps
-            .lock()
+            .write()
             .await
             .verify_and_extract(&request.message)
             .await
@@ -70,9 +71,9 @@ impl ReferenceValueProviderService for RVPSServer {
 }
 
 pub async fn start(socket: SocketAddr, config: Config) -> Result<()> {
-    let service = Core::new(config)?;
-    let inner = Arc::new(Mutex::new(service));
-    let rvps_server = RVPSServer::new(inner.clone());
+    let service = Rvps::new(config)?;
+    let inner = Arc::new(RwLock::new(service));
+    let rvps_server = RvpsServer::new(inner.clone());
 
     Server::builder()
         .add_service(ReferenceValueProviderServiceServer::new(rvps_server))

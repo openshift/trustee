@@ -2,7 +2,7 @@
 # Licensed under the Apache License, Version 2.0, see LICENSE for details.
 # SPDX-License-Identifier: Apache-2.0
 
-FROM --platform=$BUILDPLATFORM rust:latest AS builder
+FROM --platform=$BUILDPLATFORM docker.io/library/rust:latest AS builder
 ARG BUILDPLATFORM=linux/amd64
 ARG ARCH=x86_64
 ARG VERIFIER=all-verifier
@@ -34,7 +34,7 @@ FROM ubuntu:22.04
 ARG ARCH=x86_64
 ARG VERIFIER=all-verifier
 
-LABEL org.opencontainers.image.source="https://github.com/confidential-containers/attestation-service"
+LABEL org.opencontainers.image.source="https://github.com/confidential-containers/trustee/tree/main/attestation-service"
 
 # Install Openssl Suites
 RUN apt-get update && apt-get install openssl -y && \

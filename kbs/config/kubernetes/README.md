@@ -32,12 +32,17 @@ If you have more than one secret, copy them over to the `config/kubernetes/overl
 
 With the default configuration the keys will be stored in `reponame/workload_key/`. If you wish to define a different repository make necessary changes to the `overlays/patch.yaml` file.
 
+## Optional: Changing default policies
+
+The default deployed resources policy file is `base/policy.rego`. If you wish to change the default then edit that file. For example, suppose that you want to have the "allow all" policy applied, do:
+
+```bash
+cp ../../sample_policies/allow_all.rego base/policy.rego
+```
+
 ## Optional: Expose KBS using Ingress
 
 If you would like to expose KBS using Ingress, then run the following commands:
-
-> [!NOTE]
-> If you are using AKS then set the `KBS_INGRESS_CLASS` to `addon-http-application-routing` and get the `CLUSTER_SPECIFIC_DNS_ZONE` by following the instructions [here](https://learn.microsoft.com/en-us/azure/aks/http-application-routing#enable-http-application-routing).
 
 ```bash
 export KBS_INGRESS_CLASS="REPLACE_ME"
@@ -49,6 +54,14 @@ envsubst <ingress.yaml >ingress.yaml.tmp && mv ingress.yaml.tmp ingress.yaml
 kustomize edit add resource ingress.yaml
 popd
 ```
+
+If you are using AKS then one option is to enable the **approuting** add-on in your cluster (more information [here](https://learn.microsoft.com/en-us/azure/aks/app-routing)) and set the above environment variables as:
+* `KBS_INGRESS_CLASS="webapprouting.kubernetes.azure.com"`
+* the **approuting** add-on doesn't create a managed cluster DNS zone, so you will need to create it yourself and attach to **approuting** (more information [here](https://learn.microsoft.com/en-us/azure/aks/app-routing-dns-ssl#create-a-public-azure-dns-zone)). Then set `CLUSTER_SPECIFIC_DNS_ZONE` to the created zone name
+* in case you don't want a cluster DNS zone, export `KBS_INGRESS_HOST="\"\""` and use the ingress public IP:
+  ```bash
+  kubectl get service -n app-routing-system nginx -o jsonpath="{.status.loadBalancer.ingress[0].ip}"
+  ```
 
 ## Optional: Use non-release images
 

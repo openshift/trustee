@@ -9,6 +9,8 @@ use regex::Regex;
 use serde::Deserialize;
 use std::fmt;
 
+use crate::prometheus::{RESOURCE_READS_TOTAL, RESOURCE_WRITES_TOTAL};
+
 use super::local_fs;
 
 type RepositoryInstance = Arc<dyn StorageBackend>;
@@ -38,7 +40,7 @@ impl TryFrom<&str> for ResourceDesc {
     fn try_from(value: &str) -> Result<Self> {
         let regex = CELL.get_or_init(|| {
             Regex::new(
-                r"^((?<repo>[a-zA-Z0-9_\-]+[a-zA-Z0-9_\-\.]*)\/)?(?<type>[a-zA-Z0-9_\-]+[a-zA-Z0-9_\-\.]*)\/(?<tag>[a-zA-Z0-9_\-]+[a-zA-Z0-9_\-\.]*)$",
+                r"^(?<repo>[a-zA-Z0-9_\-]+[a-zA-Z0-9_\-\.]*)\/(?<type>[a-zA-Z0-9_\-]+[a-zA-Z0-9_\-\.]*)\/(?<tag>[a-zA-Z0-9_\-]+[a-zA-Z0-9_\-\.]*)$",
             )
             .unwrap()
         });
@@ -47,11 +49,7 @@ impl TryFrom<&str> for ResourceDesc {
         };
 
         Ok(Self {
-            repository_name: captures
-                .name("repo")
-                .map(|s| s.into())
-                .unwrap_or("default")
-                .into(),
+            repository_name: captures["repo"].into(),
             resource_type: captures["type"].into(),
             resource_tag: captures["tag"].into(),
         })
@@ -76,10 +74,6 @@ pub enum RepositoryConfig {
     #[cfg(feature = "aliyun")]
     #[serde(alias = "aliyun")]
     Aliyun(super::aliyun_kms::AliyunKmsBackendConfig),
-
-    #[cfg(feature = "pkcs11")]
-    #[serde(alias = "pkcs11")]
-    Pkcs11(super::pkcs11::Pkcs11Config),
 }
 
 impl Default for RepositoryConfig {
@@ -112,13 +106,6 @@ impl TryFrom<RepositoryConfig> for ResourceStorage {
                     backend: Arc::new(client),
                 })
             }
-            #[cfg(feature = "pkcs11")]
-            RepositoryConfig::Pkcs11(config) => {
-                let client = super::pkcs11::Pkcs11Backend::new(&config)?;
-                Ok(Self {
-                    backend: Arc::new(client),
-                })
-            }
         }
     }
 }
@@ -129,12 +116,18 @@ impl ResourceStorage {
         resource_desc: ResourceDesc,
         data: &[u8],
     ) -> Result<()> {
+        RESOURCE_WRITES_TOTAL
+            .with_label_values(&[&format!("{}", resource_desc)])
+            .inc();
         self.backend
             .write_secret_resource(resource_desc, data)
             .await
     }
 
     pub(crate) async fn get_secret_resource(&self, resource_desc: ResourceDesc) -> Result<Vec<u8>> {
+        RESOURCE_READS_TOTAL
+            .with_label_values(&[&format!("{}", resource_desc)])
+            .inc();
         self.backend.read_secret_resource(resource_desc).await
     }
 }
@@ -158,11 +151,7 @@ mod tests {
         resource_type: "type".into(),
         resource_tag: "tag".into(),
     }))]
-    #[case("1/2", Some(ResourceDesc {
-        repository_name: "default".into(),
-        resource_type: "1".into(),
-        resource_tag: "2".into(),
-    }))]
+    #[case("1/2", None)]
     #[case("123--_default/1Abff-_/___-afds44BC", Some(ResourceDesc {
         repository_name: "123--_default".into(),
         resource_type: "1Abff-_".into(),

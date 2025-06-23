@@ -1,5 +1,7 @@
+ARCH := $(shell uname -m)
 OS := $(shell lsb_release -si)
 RELEASE := $(shell lsb_release -sr)
+CODENAME := $(shell lsb_release -sc)
 SGX_REPO_URL := https://download.01.org/intel-sgx/sgx_repo/ubuntu
 SGX_COLLATERAL_URL := https://api.trustedservices.intel.com/sgx/certification/v4/
 SGX_QCNL_CONFIG := /etc/sgx_default_qcnl.conf
@@ -31,12 +33,11 @@ HTTPS_KEY := $(WORK_DIR)/https.key
 HTTPS_CERT := $(WORK_DIR)/https.crt
 KBS_POLICY := $(WORK_DIR)/kbs-policy.rego
 
+TEST_FEATURES ?=
+TEST_ARGUMENTS ?=
+
 SHELL := bash
-ifeq ($(OS),Ubuntu)
-    ifneq ($(RELEASE),22.04)
-        $(error "This Makefile requires Ubuntu 22.04")
-    endif
-else
+ifneq ($(OS),Ubuntu)
     $(error "This Makefile requires Ubuntu")
 endif
 
@@ -51,34 +52,39 @@ allow {
 endef
 export TEE_POLICY_REGO
 
+ifneq ($(TEST_FEATURES),)
+  TEST_ARGUMENTS = --no-default-features --features $(TEST_FEATURES)
+endif
+
 .PHONY: install-dev-dependencies
 install-dev-dependencies: install-dependencies
 	sudo apt-get update && \
 	sudo apt-get install -y \
 		build-essential \
 		clang \
-		libsgx-dcap-quote-verify-dev \
 		libssl-dev \
-		libtdx-attest-dev \
 		libtss2-dev \
 		pkg-config \
-		protobuf-compiler
+		protobuf-compiler && \
+	if [ "${ARCH}" = "x86_64" ]; then \
+	sudo apt-get install -y \
+		libsgx-dcap-quote-verify-dev; fi
 
 .PHONY: install-dependencies
 install-dependencies:
-	curl -L "$(SGX_REPO_URL)/intel-sgx-deb.key" | sudo apt-key add - && \
-	echo "deb [arch=amd64] $(SGX_REPO_URL) jammy main" \
+	if [ "${ARCH}" = "x86_64" ]; then \
+	curl -L "$(SGX_REPO_URL)/intel-sgx-deb.key" | sudo gpg --dearmor --output /usr/share/keyrings/intel-sgx.gpg && \
+	echo "deb [arch=amd64 signed-by=/usr/share/keyrings/intel-sgx.gpg] $(SGX_REPO_URL) $(CODENAME) main" \
 		| sudo tee /etc/apt/sources.list.d/intel-sgx.list && \
 	sudo apt-get update && \
 	sudo apt-get install -y \
 		libsgx-dcap-default-qpl \
 		libsgx-dcap-quote-verify \
 		libsgx-urts \
-		libtdx-attest \
 		libtss2-esys-3.0.2-0 \
 		libtss2-tctildr0 \
 		openssl && \
-	echo '{"collateral_service": "$(SGX_COLLATERAL_URL)"}' | sudo tee $(SGX_QCNL_CONFIG)
+	echo '{"collateral_service": "$(SGX_COLLATERAL_URL)"}' | sudo tee $(SGX_QCNL_CONFIG); fi
 
 kbs:
 	cd $(PROJECT_DIR) && \
@@ -92,7 +98,7 @@ resource-kbs:
 
 client:
 	cd $(PROJECT_DIR) && \
-	cargo build -p kbs-client --release && \
+	cargo build -p kbs-client --release $(TEST_ARGUMENTS) && \
 	install -D --compare $(PROJECT_DIR)/../target/release/kbs-client $(CURDIR)/client
 
 .PHONY: bins

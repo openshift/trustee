@@ -49,15 +49,15 @@ jobs:
           - target_arch: x86_64
             target_platform: linux/amd64
             build_platform: linux/amd64
-            instance: ubuntu-latest
+            instance: ubuntu-24.04
           - target_arch: s390x
             target_platform: linux/s390x
             build_platform: linux/s390x
             instance: s390x
           - target_arch: aarch64
             target_platform: linux/arm64
-            build_platform: linux/amd64
-            instance: ubuntu-latest
+            build_platform: linux/arm64
+            instance: ubuntu-24.04-arm
 
     runs-on: ${{ matrix.instance }}
 

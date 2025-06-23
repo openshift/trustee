@@ -3,15 +3,10 @@ use clap::Parser;
 use log::{info, warn};
 use shadow_rs::shadow;
 
-pub mod rvps_api {
-    tonic::include_proto!("reference");
-}
-
 use reference_value_provider_service::config::Config;
+use reference_value_provider_service::server;
 
 shadow!(build);
-
-mod server;
 
 const DEFAULT_CONFIG_PATH: &str = "/etc/rvps.json";
 const DEFAULT_ADDRESS: &str = "127.0.0.1:50003";

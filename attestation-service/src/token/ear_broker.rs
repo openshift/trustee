@@ -236,21 +236,25 @@ impl AttestationTokenBroker for EarAttestationTokenBroker {
 
         let rules = TrustVector::new()
             .into_iter()
-            .map(|c| c.tag().to_string())
+            .map(|c| c.tag().to_string().replace("-", "_"))
             .collect();
         let policy_results = self
             .policy_engine
             .evaluate(&reference_data, &tcb_claims_json, &policy_ids[0], rules)
             .await?;
 
+        debug!("policy results: {:#?}", policy_results);
+
         let mut appraisal = Appraisal::new();
 
         for (k, v) in &policy_results.rules_result {
             let claim_value = v.as_i8().context("Policy claim value not i8")?;
 
+            let k = k.replace("_", "-");
+
             appraisal
                 .trust_vector
-                .mut_by_name(k)
+                .mut_by_name(&k)
                 .unwrap()
                 .set(claim_value);
         }
