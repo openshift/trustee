@@ -2,7 +2,7 @@ module cgo
 
 go 1.23.0
 
-toolchain go1.23.9
+toolchain go1.24.4
 
 require github.com/in-toto/in-toto-golang v0.9.0
 
