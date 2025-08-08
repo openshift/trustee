@@ -1,5 +1,5 @@
 # Use UBI to build.
-FROM registry.access.redhat.com/ubi9/ubi:9.5 as builder
+FROM registry.access.redhat.com/ubi9/ubi:9.6-1754586119 as builder
 ARG ALIYUN=false
 
 # Install build dependencies from CentOS or RHEL repos.
