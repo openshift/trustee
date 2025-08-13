@@ -9,6 +9,8 @@ use regex::Regex;
 use serde::Deserialize;
 use std::fmt;
 
+use crate::prometheus::{RESOURCE_READS_TOTAL, RESOURCE_WRITES_TOTAL};
+
 use super::local_fs;
 
 type RepositoryInstance = Arc<dyn StorageBackend>;
@@ -114,12 +116,18 @@ impl ResourceStorage {
         resource_desc: ResourceDesc,
         data: &[u8],
     ) -> Result<()> {
+        RESOURCE_WRITES_TOTAL
+            .with_label_values(&[&format!("{}", resource_desc)])
+            .inc();
         self.backend
             .write_secret_resource(resource_desc, data)
             .await
     }
 
     pub(crate) async fn get_secret_resource(&self, resource_desc: ResourceDesc) -> Result<Vec<u8>> {
+        RESOURCE_READS_TOTAL
+            .with_label_values(&[&format!("{}", resource_desc)])
+            .inc();
         self.backend.read_secret_resource(resource_desc).await
     }
 }
