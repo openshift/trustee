@@ -3,11 +3,10 @@
 // SPDX-License-Identifier: Apache-2.0
 //
 
-use std::mem::offset_of;
 
 use super::{TeeEvidenceParsedClaim, Verifier};
 use crate::snp::{
-    get_common_name, get_oid_int, get_oid_octets, ProcessorGeneration, CERT_CHAINS, HW_ID_OID,
+    get_common_name, get_oid_int, get_oid_octets, get_processor_generation, ProcessorGeneration, CERT_CHAINS, HW_ID_OID,
     LOADER_SPL_OID, SNP_SPL_OID, TEE_SPL_OID, UCODE_SPL_OID,
 };
 use crate::{InitDataHash, ReportData};
@@ -31,9 +30,6 @@ const HCL_VMPL_VALUE: u32 = 0;
 const INITDATA_PCR: usize = 8;
 const SNP_REPORT_SIGNATURE_OFFSET: usize = 0x2a0; // 672 bytes
 
-struct AzVendorCertificates {
-    ca_chain: AmdChain,
-}
 
 #[derive(Serialize, Deserialize)]
 struct Evidence {
@@ -42,14 +38,12 @@ struct Evidence {
     vcek: String,
 }
 
-pub struct AzSnpVtpm {
-    vendor_certs: AzVendorCertificates,
-}
+pub struct AzSnpVtpm {}
 
 #[derive(Error, Debug)]
 pub enum CertError {
-    #[error("Failed to load Milan cert chain")]
-    LoadMilanCert,
+    #[error("Failed to load cert chain for processor generation: {0}")]
+    LoadCertChain(ProcessorGeneration),
     #[error("TPM quote nonce doesn't match expected report_data")]
     NonceMismatch,
     #[error("SNP report report_data mismatch")]
@@ -64,20 +58,20 @@ pub enum CertError {
     Anyhow(#[from] anyhow::Error),
 }
 
-// Azure vTPM still initialized to Milan only certs until az_snp_vtpm crate gets updated.
 impl AzSnpVtpm {
     pub fn new() -> Result<Self, CertError> {
+        Ok(Self {})
+    }
+
+    fn get_vendor_certs(&self, proc_gen: ProcessorGeneration) -> Result<AmdChain, CertError> {
         let vendor_certs = CERT_CHAINS
-            .get(&ProcessorGeneration::Milan)
-            .ok_or(CertError::LoadMilanCert)?
+            .get(&proc_gen)
+            .ok_or(CertError::LoadCertChain(proc_gen))?
             .clone();
-        Ok(Self {
-            vendor_certs: AzVendorCertificates {
-                ca_chain: AmdChain {
-                    ask: vendor_certs.ask.into(),
-                    ark: vendor_certs.ark.into(),
-                },
-            },
+        
+        Ok(AmdChain {
+            ask: vendor_certs.ask.into(),
+            ark: vendor_certs.ark.into(),
         })
     }
 }
@@ -137,14 +131,25 @@ impl Verifier for AzSnpVtpm {
         let snp_report = hcl_report.try_into()?;
         verify_report_data(&var_data_hash, &snp_report)?;
 
+        // Check report version and detect processor generation
+        let proc_gen = if snp_report.version >= 3 {
+            // For version 3+ reports, detect processor generation from CPU family/model
+            get_processor_generation(&snp_report)?
+        } else {
+            // For older reports (< version 3), default to Milan as fallback
+            // This provides backward compatibility since Milan was the first SNP generation
+            debug!("Attestation report version {} < 3, defaulting to Milan certificates", snp_report.version);
+            ProcessorGeneration::Milan
+        };
+        let ca_chain = self.get_vendor_certs(proc_gen)?;
+
         let vcek = Vcek::from_pem(&evidence.vcek)?;
 
-        //Verify certificates
-        self.vendor_certs
-            .ca_chain
+        // Verify certificates using the correct processor generation
+        ca_chain
             .validate()
             .context("Failed to validate CA chain")?;
-        vcek.validate(&self.vendor_certs.ca_chain)
+        vcek.validate(&ca_chain)
             .context("Failed to validate VCEK")?;
 
         verify_snp_report(&snp_report, &vcek)?;

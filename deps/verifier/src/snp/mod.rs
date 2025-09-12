@@ -54,7 +54,7 @@ const KDS_CERT_SITE: &str = "https://kdsintf.amd.com";
 const KDS_VCEK: &str = "/vcek/v1";
 
 /// Attestation report versions supported
-const REPORT_VERSION_MIN: u32 = 3;
+const REPORT_VERSION_MIN: u32 = 2;
 const REPORT_VERSION_MAX: u32 = 4;
 
 pub(crate) static CERT_CHAINS: LazyLock<HashMap<ProcessorGeneration, VendorCertificates>> =
@@ -491,7 +491,7 @@ async fn fetch_vcek_from_kds(
 }
 
 /// Determines the processor model based on the family and model IDs from the attestation report.
-fn get_processor_generation(att_report: &AttestationReport) -> Result<ProcessorGeneration> {
+pub(crate) fn get_processor_generation(att_report: &AttestationReport) -> Result<ProcessorGeneration> {
     let cpu_fam = att_report
         .cpuid_fam_id
         .ok_or_else(|| anyhow::anyhow!("Attestation report version 3+ is missing CPU family ID"))?;
