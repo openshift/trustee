@@ -76,7 +76,7 @@ build: background-check-kbs
 
 .PHONY: background-check-kbs
 background-check-kbs:
-	$(CARGO_ENV) cargo build -p kbs --release --no-default-features --features $(FEATURES),$(AS_FEATURE) $(TARGET_FLAG)
+	$(CARGO_ENV) cargo build -p kbs --locked --release --no-default-features --features $(FEATURES),$(AS_FEATURE) $(TARGET_FLAG)
 
 .PHONY: passport-issuer-kbs
 passport-issuer-kbs:
@@ -120,7 +120,7 @@ uninstall:
 	rm -rf $(INSTALL_DESTDIR)/kbs $(INSTALL_DESTDIR)/kbs-client $(INSTALL_DESTDIR)/issuer-kbs $(INSTALL_DESTDIR)/resource-kbs
 
 check:
-	cargo test -p kbs -p kbs-client $(TEST_ARGUMENTS)
+	cargo test -p kbs -p kbs-client -p integration-tests $(TEST_ARGUMENTS)
 
 lint:
 	cargo clippy -p kbs -p kbs-client $(TEST_ARGUMENTS) -- -D warnings
