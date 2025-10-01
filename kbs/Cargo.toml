@@ -110,6 +110,7 @@ josekit = "0.10.3"
 tempfile.workspace = true
 rstest.workspace = true
 reference-value-provider-service.path = "../rvps"
+integration-tests = { path = "../integration-tests" }
 serial_test = "3.0"
 toml = "0.9"
 
