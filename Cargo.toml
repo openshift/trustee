@@ -35,10 +35,10 @@ hex = "0.4.3"
 jwt-simple = { version = "0.12", default-features = false, features = [
     "pure-rust",
 ] }
-kbs_protocol = { git = "https://github.com/confidential-containers/guest-components.git", rev = "c35306f", default-features = false }
+kbs_protocol = { git = "https://github.com/lmilleri/guest-components", branch = "trustee-fix", default-features = false }
 # TODO: Change this to kbs-types release
-kbs-types = { "git" = "https://github.com/virtee/kbs-types.git", rev = "e3cc706" }
-kms = { git = "https://github.com/confidential-containers/guest-components.git", rev = "c35306f", default-features = false }
+kbs-types = { "git" = "https://github.com/confidential-containers/kbs-types.git", rev = "900aa8f" }
+kms = { git = "https://github.com/lmilleri/guest-components", branch = "trustee-fix", default-features = false }
 jsonwebtoken = { version = "9", default-features = false }
 lazy_static = "1.4.0"
 log = "0.4.28"
@@ -61,11 +61,19 @@ serde_qs = "0.13.0"
 serde_with = { version = "3.14.0", features = ["base64", "hex"] }
 serial_test = { version = "3.2.0", features = ["async"] }
 sha2 = "0.10"
-shadow-rs = "1.3.0"
+shadow-rs = "=1.0.0"
 strum = { version = "0.27", features = ["derive"] }
+tz-rs = "=0.6.0"
+tzdb = "=0.6.0"
+picky-asn1-der = "=0.4.0"
+picky-asn1-x509 = "=0.11.0"
 thiserror = "2.0"
 tokio = { version = "1", features = ["full"], default-features = false }
 toml = "0.9.5"
 tempfile = "3.20.0"
 tonic = "0.12"
 tonic-build = "0.12"
+
+[patch.crates-io]
+base64ct = { git = "https://github.com/RustCrypto/formats.git", tag = "base64ct/v1.6.0", version = "1.6.0" }
+

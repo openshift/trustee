@@ -20,6 +20,8 @@ env_logger.workspace = true
 jwt-simple.workspace = true
 kbs_protocol = { workspace = true, default-features = false }
 log.workspace = true
+picky-asn1-der = "=0.4.0"
+picky-asn1-x509 = "=0.11.0"
 reqwest = { workspace = true, default-features = false, features = ["cookies", "json"] }
 serde = { workspace = true, features = ["derive"] }
 serde_json.workspace = true
