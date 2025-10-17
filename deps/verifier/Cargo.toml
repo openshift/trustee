@@ -11,7 +11,7 @@ all-verifier = [
     "snp-verifier",
     "az-snp-vtpm-verifier",
     "az-tdx-vtpm-verifier",
-    "csv-verifier",
+    # "csv-verifier",  # Temporarily disabled due to compilation issues
     "hygon-dcu-verifier",
     "cca-verifier",
     "se-verifier",
