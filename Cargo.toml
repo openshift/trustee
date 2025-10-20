@@ -35,10 +35,10 @@ hex = "0.4.3"
 jwt-simple = { version = "0.12", default-features = false, features = [
     "pure-rust",
 ] }
-kbs_protocol = { git = "https://github.com/lmilleri/guest-components", branch = "trustee-fix", default-features = false }
+kbs_protocol = { git = "https://github.com/lmilleri/guest-components.git", branch = "trustee-fix-2", default-features = false }
 # TODO: Change this to kbs-types release
-kbs-types = { "git" = "https://github.com/confidential-containers/kbs-types.git", rev = "900aa8f" }
-kms = { git = "https://github.com/lmilleri/guest-components", branch = "trustee-fix", default-features = false }
+kbs-types = { "git" = "https://github.com/virtee/kbs-types.git", rev = "e3cc706" }
+kms = { git = "https://github.com/lmilleri/guest-components.git", branch = "trustee-fix-2", default-features = false }
 jsonwebtoken = { version = "9", default-features = false }
 lazy_static = "1.4.0"
 log = "0.4.28"
@@ -76,4 +76,7 @@ tonic-build = "0.12"
 
 [patch.crates-io]
 base64ct = { git = "https://github.com/RustCrypto/formats.git", tag = "base64ct/v1.6.0", version = "1.6.0" }
+
+[patch."https://github.com/confidential-containers/kbs-types.git"]
+kbs-types = { git = "https://github.com/virtee/kbs-types.git", rev = "e3cc706" }
 
