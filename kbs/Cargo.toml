@@ -49,6 +49,8 @@ aes-kw = "0.2.1"
 anyhow.workspace = true
 async-trait.workspace = true
 base64.workspace = true
+base64ct.workspace = true
+picky-asn1-der.workspace = true
 cfg-if.workspace = true
 clap = { workspace = true, features = ["derive", "env"] }
 config.workspace = true

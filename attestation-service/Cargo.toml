@@ -11,8 +11,8 @@ sgx-verifier = ["verifier/sgx-verifier"]
 az-snp-vtpm-verifier = ["verifier/az-snp-vtpm-verifier"]
 az-tdx-vtpm-verifier = ["verifier/az-tdx-vtpm-verifier"]
 snp-verifier = ["verifier/snp-verifier"]
-csv-verifier = ["verifier/csv-verifier"]
-hygon-dcu-verifier = ["verifier/hygon-dcu-verifier"]
+# csv-verifier = ["verifier/csv-verifier"]
+# hygon-dcu-verifier = ["verifier/hygon-dcu-verifier"]
 cca-verifier = ["verifier/cca-verifier"]
 se-verifier = ["verifier/se-verifier"]
 nvidia-verifier = ["verifier/nvidia-verifier"]
@@ -60,6 +60,7 @@ serde_json.workspace = true
 serde_variant = "0.1.2"
 sha2.workspace = true
 shadow-rs.workspace = true
+tz-rs.workspace = true
 strum.workspace = true
 tempfile.workspace = true
 time = { version = "0.3.40", features = ["std"] }
@@ -73,6 +74,7 @@ actix-cors = { version = "0.7", optional = true}
 
 [build-dependencies]
 shadow-rs.workspace = true
+tz-rs.workspace = true
 tonic-build.workspace = true
 
 [dev-dependencies]
