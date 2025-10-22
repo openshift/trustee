@@ -38,6 +38,7 @@ serde.workspace = true
 serde_json.workspace = true
 sha2 = { workspace = true, optional = true }
 shadow-rs = { workspace = true, optional = true }
+tz-rs = { workspace = true, optional = true }
 sled = "0.34.7"
 strum.workspace = true
 tempfile.workspace = true
@@ -46,6 +47,7 @@ tonic = { workspace = true, optional = true }
 
 [build-dependencies]
 shadow-rs.workspace = true
+tz-rs.workspace = true
 tonic-build.workspace = true
 
 [dev-dependencies]
