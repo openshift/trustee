@@ -34,6 +34,10 @@ pub struct HttpServerConfig {
 
     /// Request payload size in MB
     pub payload_request_size: u32,
+
+    /// Number of worker threads for the actix-web server.
+    /// If not specified, defaults to the number of logical CPU cores.
+    pub worker_count: Option<usize>,
 }
 
 impl Default for HttpServerConfig {
@@ -44,6 +48,7 @@ impl Default for HttpServerConfig {
             certificate: None,
             insecure_http: DEFAULT_INSECURE_HTTP,
             payload_request_size: DEFAULT_PAYLOAD_REQUEST_SIZE,
+            worker_count: None,
         }
     }
 }
@@ -165,6 +170,7 @@ mod tests {
             certificate: Some("/etc/kbs-cert.pem".into()),
             insecure_http: false,
             payload_request_size: DEFAULT_PAYLOAD_REQUEST_SIZE,
+            worker_count: None,
         },
         admin: AdminConfig {
             auth_public_key: Some(PathBuf::from("/etc/kbs-admin.pub")),
@@ -214,6 +220,7 @@ mod tests {
             certificate: None,
             insecure_http: DEFAULT_INSECURE_HTTP,
             payload_request_size: DEFAULT_PAYLOAD_REQUEST_SIZE,
+            worker_count: None,
         },
         admin: AdminConfig {
             auth_public_key: None,
@@ -251,6 +258,7 @@ mod tests {
             certificate: Some("/etc/kbs-cert.pem".into()),
             insecure_http: false,
             payload_request_size: DEFAULT_PAYLOAD_REQUEST_SIZE,
+            worker_count: None,
         },
         admin: AdminConfig {
             auth_public_key: Some(PathBuf::from("/etc/kbs-admin.pub")),
@@ -289,6 +297,7 @@ mod tests {
             certificate: None,
             insecure_http: true,
             payload_request_size: DEFAULT_PAYLOAD_REQUEST_SIZE,
+            worker_count: None,
         },
         admin: AdminConfig {
             auth_public_key: Some(PathBuf::from("/opt/confidential-containers/kbs/user-keys/public.pub")),
@@ -330,6 +339,7 @@ mod tests {
             certificate: None,
             insecure_http: true,
             payload_request_size: DEFAULT_PAYLOAD_REQUEST_SIZE,
+            worker_count: None,
         },
         admin: AdminConfig {
             auth_public_key: Some("/kbs/kbs.pem".into()),
@@ -365,6 +375,7 @@ mod tests {
             certificate: None,
             insecure_http: true,
             payload_request_size: DEFAULT_PAYLOAD_REQUEST_SIZE,
+            worker_count: None,
         },
         admin: AdminConfig {
             auth_public_key: Some("/kbs/kbs.pem".into()),
