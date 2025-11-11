@@ -202,6 +202,8 @@ impl TestHarness {
                 certificate: None,
                 insecure_http: true,
                 payload_request_size: 2,
+                worker_count: Some(4),
+            
             },
             admin: AdminConfig {
                 auth_public_key: None,
