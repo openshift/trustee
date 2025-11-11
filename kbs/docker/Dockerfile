@@ -1,6 +1,6 @@
 # rust:1.89.0-slim
 FROM --platform=${BUILDPLATFORM:-linux/amd64} \
-    docker.io/library/rust@sha256:6c828d9865870a3bc8c02919d73803df22cac59b583d8f2cb30a296abe64748f \
+    docker.io/library/rust@sha256:cd34b27bc6df5450e4952075dc6bd3881a1aeb8f5d0478cd75c2160ca47e2182 \
     AS builder
 ARG ARCH=x86_64
 ARG ALIYUN=false
