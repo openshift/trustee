@@ -1,5 +1,5 @@
 # Use UBI to build.
-FROM registry.access.redhat.com/ubi9/ubi:9.5 as builder
+FROM registry.access.redhat.com/ubi10/ubi:10.1 as builder
 ARG ALIYUN=false
 
 # Install build dependencies from CentOS or RHEL repos.
@@ -51,7 +51,7 @@ RUN if [ $(uname -m) = "x86_64" ]; then \
 fi
 
 # Package UBI image.
-FROM registry.access.redhat.com/ubi9
+FROM registry.access.redhat.com/ubi10
 
 # Update packages. Get CVE fixes sooner.
 RUN dnf -y update && dnf clean all
