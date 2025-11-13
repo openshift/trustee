@@ -24,11 +24,7 @@ anyhow = "1.0"
 assert-json-diff = "2.0.2"
 async-trait = "0.1.88"
 base64 = "0.22.1"
-base64ct = "=1.7.3"
 byteorder = "1.5.0"
-scroll_derive = "=0.12.1"
-picky-asn1-der = "=0.5.2"
-tz-rs = "=0.7.0"
 cfg-if = "1.0.0"
 chrono = "0.4.41"
 clap = { version = "4", features = ["derive"] }
@@ -39,10 +35,10 @@ hex = "0.4.3"
 jwt-simple = { version = "0.12", default-features = false, features = [
     "pure-rust",
 ] }
-kbs_protocol = { git = "https://github.com/openshift/confidential-containers-guest-components.git", branch = "osc-release", default-features = false }
+kbs_protocol = { git = "https://github.com/confidential-containers/guest-components.git", rev = "c35306f", default-features = false }
 # TODO: Change this to kbs-types release
-kbs-types = { "git" = "https://github.com/confidential-containers/kbs-types.git", rev = "900aa8f" }
-kms = { git = "https://github.com/openshift/confidential-containers-guest-components.git", branch = "osc-release", default-features = false }
+kbs-types = { "git" = "https://github.com/virtee/kbs-types.git", rev = "e3cc706" }
+kms = { git = "https://github.com/confidential-containers/guest-components.git", rev = "c35306f", default-features = false }
 jsonwebtoken = { version = "9", default-features = false }
 lazy_static = "1.4.0"
 log = "0.4.28"
@@ -73,6 +69,3 @@ toml = "0.9.5"
 tempfile = "3.20.0"
 tonic = "0.12"
 tonic-build = "0.12"
-
-[patch.crates-io]
-nvml-wrapper = { git = "https://github.com/rust-nvml/nvml-wrapper", rev = "7e0752f331" }
