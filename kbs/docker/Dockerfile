@@ -45,7 +45,7 @@ RUN cd kbs && make AS_FEATURE=coco-as-builtin ALIYUN=${ALIYUN} ARCH=${ARCH} && \
     make ARCH=${ARCH} install-kbs
 
 # ubuntu:24.04
-FROM ubuntu@sha256:7c06e91f61fa88c08cc74f7e1b7c69ae24910d745357e0dfe1d2c0322aaf20f9
+FROM ubuntu@sha256:c35e29c9450151419d9448b0fd75374fec4fff364a27f176fb458d472dfc9e54
 ARG ARCH=x86_64
 
 WORKDIR /tmp
