@@ -1,6 +1,6 @@
 # rust:1.89.0
 FROM --platform=${BUILDPLATFORM:-linux/amd64} \
-    docker.io/library/rust@sha256:6e6d04bd50cd4c433a805c58c13f186a508c5b5417b9b61cae40ec28e0593c51 \
+    docker.io/library/rust@sha256:ad8c72c693b517ed60c930839daed91a5696fa6118f031d888cd0b7055a921a3 \
     AS builder
 ARG BUILDPLATFORM=linux/amd64
 ARG ARCH=x86_64
