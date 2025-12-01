@@ -32,4 +32,4 @@ arches:
   - x86_64
   - s390x
 context:
-  image: registry.access.redhat.com/ubi9/ubi:9.5
+  image: registry.access.redhat.com/ubi9/ubi:9.7
