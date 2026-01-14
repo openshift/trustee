@@ -41,7 +41,7 @@ jwt-simple = { version = "0.12", default-features = false, features = [
 ] }
 kbs_protocol = { git = "https://github.com/openshift/confidential-containers-guest-components.git", branch = "osc-release", default-features = false }
 # TODO: Change this to kbs-types release
-kbs-types = { "git" = "https://github.com/confidential-containers/kbs-types.git", rev = "900aa8f" }
+kbs-types = { "git" = "https://github.com/confidential-containers/kbs-types.git", rev = "c64cf400a4b89e476901128056dddc00ff142ad5" }
 kms = { git = "https://github.com/openshift/confidential-containers-guest-components.git", branch = "osc-release", default-features = false }
 jsonwebtoken = { version = "9", default-features = false }
 lazy_static = "1.4.0"
