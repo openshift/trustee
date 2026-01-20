@@ -1,20 +1,11 @@
 # Use UBI to build.
-FROM registry.access.redhat.com/ubi9/ubi:9.5 as builder
+FROM registry.access.redhat.com/ubi10:10.1-1767602397 as builder
 ARG ALIYUN=false
 
 # Install build dependencies from CentOS or RHEL repos.
 RUN \
 # Update packages. Get CVE fixes sooner.
 dnf -y update && \
-# Enable additional repositories for CentOS or RHEL.
-#if command -v subscription-manager; then \
-#  REPO_ARCH=$(uname -m) && \
-#  subscription-manager register --org "$(cat /activation-key/org)" --activationkey "$(cat /activation-key/activationkey)" && \
-#  subscription-manager repos --enable rhel-9-for-${REPO_ARCH}-appstream-rpms --enable codeready-builder-for-rhel-9-${REPO_ARCH}-rpms; \
-#else \
-#  dnf -y install 'dnf-command(config-manager)' && dnf config-manager --enable crb; \
-#fi && \
-# Install packages.
 dnf -y --setopt=install_weak_deps=0 install \
   cargo pkg-config perl-FindBin openssl-devel perl-lib perl-IPC-Cmd perl-File-Compare perl-File-Copy clang-devel \
   rust gcc gcc-c++ \ 
@@ -51,7 +42,7 @@ RUN if [ $(uname -m) = "x86_64" ]; then \
 fi
 
 # Package UBI image.
-FROM registry.access.redhat.com/ubi9
+FROM registry.access.redhat.com/ubi10:10.1-1767602397
 
 # Update packages. Get CVE fixes sooner.
 RUN dnf -y update && dnf clean all
