@@ -84,8 +84,11 @@ impl ReferenceValueStorage for LocalJson {
     }
 
     async fn get_values(&self) -> Result<Vec<ReferenceValue>> {
+        log::debug!("LocalJson::get_values() - entering, file_path={}", self.file_path);
         let _ = self.lock.read().await;
+        log::debug!("LocalJson::get_values() - lock acquired, about to read file");
         let file = tokio::fs::read(&self.file_path).await?;
+        log::debug!("LocalJson::get_values() - file read, {} bytes", file.len());
         let rvs: Vec<ReferenceValue> = serde_json::from_slice(&file)?;
         Ok(rvs)
     }

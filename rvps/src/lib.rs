@@ -90,8 +90,10 @@ impl Rvps {
     }
 
     pub async fn get_digests(&self) -> Result<HashMap<String, Value>> {
+        log::debug!("Rvps::get_digests() - about to call storage.get_values()");
         let mut rv_map = HashMap::new();
         let reference_values = self.storage.get_values().await?;
+        log::debug!("Rvps::get_digests() - got {} values", reference_values.len());
 
         for rv in reference_values {
             if rv.expired() {
