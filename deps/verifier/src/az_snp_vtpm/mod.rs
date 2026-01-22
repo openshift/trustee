@@ -8,6 +8,7 @@ use crate::snp::{
     get_common_name, get_oid_int, get_oid_octets, ProcessorGeneration, CERT_CHAINS, HW_ID_OID,
     LOADER_SPL_OID, SNP_SPL_OID, TEE_SPL_OID, UCODE_SPL_OID,
 };
+use strum::IntoEnumIterator;
 use crate::{InitDataHash, ReportData};
 use anyhow::{bail, Context, Result};
 use async_trait::async_trait;
@@ -29,10 +30,6 @@ const HCL_VMPL_VALUE: u32 = 0;
 const INITDATA_PCR: usize = 8;
 const SNP_REPORT_SIGNATURE_OFFSET: usize = 0x2a0; // 672 bytes
 
-struct AzVendorCertificates {
-    ca_chain: AmdChain,
-}
-
 #[derive(Serialize, Deserialize)]
 struct Evidence {
     quote: Quote,
@@ -40,14 +37,12 @@ struct Evidence {
     vcek: String,
 }
 
-pub struct AzSnpVtpm {
-    vendor_certs: AzVendorCertificates,
-}
+pub struct AzSnpVtpm {}
 
 #[derive(Error, Debug)]
 pub enum CertError {
-    #[error("Failed to load Milan cert chain")]
-    LoadMilanCert,
+    #[error("Failed to validate VCEK against any known processor generation (Milan, Genoa, Turin)")]
+    NoMatchingProcessorGeneration,
     #[error("TPM quote nonce doesn't match expected report_data")]
     NonceMismatch,
     #[error("SNP report report_data mismatch")]
@@ -62,21 +57,9 @@ pub enum CertError {
     Anyhow(#[from] anyhow::Error),
 }
 
-// Azure vTPM still initialized to Milan only certs until az_snp_vtpm crate gets updated.
 impl AzSnpVtpm {
     pub fn new() -> Result<Self, CertError> {
-        let vendor_certs = CERT_CHAINS
-            .get(&ProcessorGeneration::Milan)
-            .ok_or(CertError::LoadMilanCert)?
-            .clone();
-        Ok(Self {
-            vendor_certs: AzVendorCertificates {
-                ca_chain: AmdChain {
-                    ask: vendor_certs.ask.into(),
-                    ark: vendor_certs.ark.into(),
-                },
-            },
-        })
+        Ok(Self {})
     }
 }
 
@@ -137,13 +120,47 @@ impl Verifier for AzSnpVtpm {
 
         let vcek = Vcek::from_pem(&evidence.vcek)?;
 
-        //Verify certificates
-        self.vendor_certs
-            .ca_chain
-            .validate()
-            .context("Failed to validate CA chain")?;
-        vcek.validate(&self.vendor_certs.ca_chain)
-            .context("Failed to validate VCEK")?;
+        // Try to validate VCEK against all known processor generations
+        let mut validation_errors = Vec::new();
+        let mut validated = false;
+
+        for proc_gen in ProcessorGeneration::iter() {
+            let Some(vendor_certs) = CERT_CHAINS.get(&proc_gen) else {
+                continue;
+            };
+
+            let ca_chain = AmdChain {
+                ask: vendor_certs.ask.clone().into(),
+                ark: vendor_certs.ark.clone().into(),
+            };
+
+            // Try to validate with this processor generation
+            match ca_chain.validate() {
+                Ok(_) => match vcek.validate(&ca_chain) {
+                    Ok(_) => {
+                        log::info!("Successfully validated VCEK against {} processor certificates", proc_gen);
+                        validated = true;
+                        break;
+                    }
+                    Err(e) => {
+                        log::debug!("VCEK validation failed for {}: {}", proc_gen, e);
+                        validation_errors.push(format!("{}: {}", proc_gen, e));
+                    }
+                },
+                Err(e) => {
+                    log::debug!("CA chain validation failed for {}: {}", proc_gen, e);
+                    validation_errors.push(format!("{} CA chain: {}", proc_gen, e));
+                }
+            }
+        }
+
+        if !validated {
+            bail!(
+                "{}. Tried: {}",
+                CertError::NoMatchingProcessorGeneration,
+                validation_errors.join("; ")
+            );
+        }
 
         verify_snp_report(&snp_report, &vcek)?;
 

@@ -219,6 +219,7 @@ impl AttestationService {
                 verification_request.tee
             );
 
+            debug!("Processing {} claims from verifier", claims.len());
             for (claims_from_tee_evidence, tee_class) in claims {
                 tee_claims.push(TeeClaims {
                     tee: verification_request.tee,
@@ -228,13 +229,18 @@ impl AttestationService {
                     runtime_data_claims: runtime_data_claims.clone(),
                 });
             }
+            debug!("Finished processing claims. Total tee_claims: {}", tee_claims.len());
         }
 
+        debug!("Finished processing all verification requests. About to call rvps.get_digests()");
         let reference_data_map = self
             .rvps
             .get_digests()
             .await
-            .map_err(|e| anyhow!("Generate reference data failed: {:?}", e))?;
+            .map_err(|e| {
+                debug!("rvps.get_digests() failed: {:?}", e);
+                anyhow!("Generate reference data failed: {:?}", e)
+            })?;
         debug!("reference_data_map: {:#?}", reference_data_map);
 
         let attestation_results_token = self
