@@ -65,7 +65,7 @@ scroll = { version = "0.13.0", default-features = false, features = [
 serde.workspace = true
 serde_json.workspace = true
 serde_with = { workspace = true, optional = true }
-sev = { git = "https://github.com/virtee/sev", rev = "d487809188c3c92e397bc92e2cb2a85eb982c980", default-features = false, features = [
+sev = { git = "https://github.com/virtee/sev", rev = "900d42d6a1f9102ed52faa3a3889b54e8a7e12c8", default-features = false, features = [
     "openssl",
     "snp",
     "serde",
