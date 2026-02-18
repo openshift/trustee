@@ -10,7 +10,7 @@ use crate::snp::{
 };
 use strum::IntoEnumIterator;
 use crate::{InitDataHash, ReportData};
-use anyhow::{bail, Context, Result};
+use anyhow::{anyhow, bail, Context, Result};
 use async_trait::async_trait;
 use az_snp_vtpm::certs::{AmdChain, Vcek};
 use az_snp_vtpm::hcl::{HclReport, SNP_REPORT_SIZE};
@@ -121,46 +121,54 @@ impl Verifier for AzSnpVtpm {
         let vcek = Vcek::from_pem(&evidence.vcek)?;
 
         // Try to validate VCEK against all known processor generations
-        let mut validation_errors = Vec::new();
-        let mut validated = false;
+        // Wrap in spawn_blocking since certificate validation is CPU-intensive
+        let vcek = tokio::task::spawn_blocking(move || {
+            let mut validation_errors = Vec::new();
+            let mut validated = false;
 
-        for proc_gen in ProcessorGeneration::iter() {
-            let Some(vendor_certs) = CERT_CHAINS.get(&proc_gen) else {
-                continue;
-            };
+            for proc_gen in ProcessorGeneration::iter() {
+                let Some(vendor_certs) = CERT_CHAINS.get(&proc_gen) else {
+                    continue;
+                };
 
-            let ca_chain = AmdChain {
-                ask: vendor_certs.ask.clone().into(),
-                ark: vendor_certs.ark.clone().into(),
-            };
+                let ca_chain = AmdChain {
+                    ask: vendor_certs.ask.clone().into(),
+                    ark: vendor_certs.ark.clone().into(),
+                };
 
-            // Try to validate with this processor generation
-            match ca_chain.validate() {
-                Ok(_) => match vcek.validate(&ca_chain) {
-                    Ok(_) => {
-                        log::info!("Successfully validated VCEK against {} processor certificates", proc_gen);
-                        validated = true;
-                        break;
-                    }
+                // Try to validate with this processor generation
+                match ca_chain.validate() {
+                    Ok(_) => match vcek.validate(&ca_chain) {
+                        Ok(_) => {
+                            log::info!("Successfully validated VCEK against {} processor certificates", proc_gen);
+                            validated = true;
+                            break;
+                        }
+                        Err(e) => {
+                            log::debug!("VCEK validation failed for {}: {}", proc_gen, e);
+                            validation_errors.push(format!("{}: {}", proc_gen, e));
+                        }
+                    },
                     Err(e) => {
-                        log::debug!("VCEK validation failed for {}: {}", proc_gen, e);
-                        validation_errors.push(format!("{}: {}", proc_gen, e));
+                        log::debug!("CA chain validation failed for {}: {}", proc_gen, e);
+                        validation_errors.push(format!("{} CA chain: {}", proc_gen, e));
                     }
-                },
-                Err(e) => {
-                    log::debug!("CA chain validation failed for {}: {}", proc_gen, e);
-                    validation_errors.push(format!("{} CA chain: {}", proc_gen, e));
                 }
             }
-        }
 
-        if !validated {
-            bail!(
-                "{}. Tried: {}",
-                CertError::NoMatchingProcessorGeneration,
-                validation_errors.join("; ")
-            );
-        }
+            if validated {
+                Ok(vcek)
+            } else {
+                Err(format!(
+                    "{}. Tried: {}",
+                    CertError::NoMatchingProcessorGeneration,
+                    validation_errors.join("; ")
+                ))
+            }
+        })
+        .await
+        .context("VCEK validation task panicked")?
+        .map_err(|e| anyhow!(e))?;
 
         verify_snp_report(&snp_report, &vcek)?;
 
