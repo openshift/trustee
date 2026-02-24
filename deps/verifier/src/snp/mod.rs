@@ -4,7 +4,6 @@ use self::serde::{Deserialize, Serialize};
 use anyhow::anyhow;
 use asn1_rs::{oid, FromDer, Integer, OctetString, Oid};
 use async_trait::async_trait;
-use base64::{engine::general_purpose::STANDARD, Engine};
 use http_cache_reqwest::{
     Cache, CacheMode, HttpCache, HttpCacheOptions, MokaCacheBuilder, MokaManager,
 };
@@ -597,6 +596,7 @@ pub(crate) fn verify_report_tcb(
 
 /// Parses the attestation report and extracts the TEE evidence claims.
 /// Returns a JSON-formatted map of parsed claims.
+/// Note: Uses hex encoding for consistency with other verifiers (TDX, SGX, vTPM).
 pub(crate) fn parse_tee_evidence(report: &AttestationReport) -> TeeEvidenceParsedClaim {
     let claims_map = json!({
         // policy fields
@@ -618,9 +618,9 @@ pub(crate) fn parse_tee_evidence(report: &AttestationReport) -> TeeEvidenceParse
         "platform_smt_enabled": report.plat_info.smt_enabled(),
 
         // measurements
-        "measurement": STANDARD.encode(report.measurement),
-        "report_data": STANDARD.encode(report.report_data),
-        "init_data": STANDARD.encode(report.host_data),
+        "measurement": hex::encode(report.measurement),
+        "report_data": hex::encode(report.report_data),
+        "init_data": hex::encode(report.host_data),
     });
 
     claims_map as TeeEvidenceParsedClaim
@@ -641,7 +641,9 @@ pub(crate) fn get_common_name(cert: &x509::X509) -> Result<String> {
 }
 
 /// Determines the processor model based on the family and model IDs from the attestation report.
-fn get_processor_generation(att_report: &AttestationReport) -> Result<ProcessorGeneration> {
+pub(crate) fn get_processor_generation(
+    att_report: &AttestationReport,
+) -> Result<ProcessorGeneration> {
     let cpu_fam = att_report
         .cpuid_fam_id
         .ok_or_else(|| anyhow::anyhow!("Attestation report version 3+ is missing CPU family ID"))?;
@@ -981,5 +983,57 @@ mod tests {
             .verify()
             .context("Report signature verification against VEK signature failed")
             .unwrap();
+    }
+
+    #[test]
+    fn test_hex_encoding_in_parsed_claims() {
+        // Parse attestation report
+        let attestation_report = AttestationReport::from_bytes(VCEK_REPORT).unwrap();
+
+        // Generate parsed claims
+        let claims = parse_tee_evidence(&attestation_report);
+
+        // Extract the three key fields that should be hex-encoded
+        let measurement = claims.get("measurement").and_then(|v| v.as_str()).unwrap();
+        let report_data = claims.get("report_data").and_then(|v| v.as_str()).unwrap();
+        let init_data = claims.get("init_data").and_then(|v| v.as_str()).unwrap();
+
+        // Verify they are valid hex strings by checking:
+        // 1. All characters are valid hex digits (0-9, a-f)
+        // 2. Length matches expected byte count * 2 (hex encoding doubles the length)
+
+        // measurement is 48 bytes -> 96 hex chars
+        assert_eq!(
+            measurement.len(),
+            96,
+            "measurement should be 96 hex characters"
+        );
+        assert!(
+            measurement.chars().all(|c| c.is_ascii_hexdigit()),
+            "measurement should only contain hex digits"
+        );
+
+        // report_data is 64 bytes -> 128 hex chars
+        assert_eq!(
+            report_data.len(),
+            128,
+            "report_data should be 128 hex characters"
+        );
+        assert!(
+            report_data.chars().all(|c| c.is_ascii_hexdigit()),
+            "report_data should only contain hex digits"
+        );
+
+        // init_data (host_data) is 32 bytes -> 64 hex chars
+        assert_eq!(init_data.len(), 64, "init_data should be 64 hex characters");
+        assert!(
+            init_data.chars().all(|c| c.is_ascii_hexdigit()),
+            "init_data should only contain hex digits"
+        );
+
+        // Verify we can decode them back to bytes (confirms valid hex encoding)
+        hex::decode(measurement).expect("measurement should be valid hex");
+        hex::decode(report_data).expect("report_data should be valid hex");
+        hex::decode(init_data).expect("init_data should be valid hex");
     }
 }
