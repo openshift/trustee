@@ -3,9 +3,8 @@ OS := $(shell lsb_release -si)
 RELEASE := $(shell lsb_release -sr)
 CODENAME := $(shell lsb_release -sc)
 SGX_REPO_URL := https://download.01.org/intel-sgx/sgx_repo/ubuntu
-SGX_COLLATERAL_URL := https://api.trustedservices.intel.com/sgx/certification/v4/
-SGX_QCNL_CONFIG := /etc/sgx_default_qcnl.conf
 KBS_CONFIG_PATH := ./config
+QCNL_CONF_PATH := $(shell mktemp --suffix=.kbs-qcnl.conf)
 MAKEFILE_DIR := $(shell dirname $(abspath $(lastword $(MAKEFILE_LIST))))
 PROJECT_DIR := $(MAKEFILE_DIR)/..
 BOLD := $(shell tput bold)
@@ -87,8 +86,7 @@ install-dependencies:
 		libsgx-urts \
 		libtss2-esys-3.0.2-0 \
 		libtss2-tctildr0 \
-		openssl && \
-	echo '{"collateral_service": "$(SGX_COLLATERAL_URL)"}' | sudo tee $(SGX_QCNL_CONFIG); fi
+		openssl; fi
 
 kbs:
 	cd $(PROJECT_DIR) && \
@@ -231,11 +229,10 @@ stop: stop-kbs stop-resource-kbs
 .PHONY: e2e-test
 e2e-test: test-bgcheck test-passport stop
 
-# Vault configuration
-VAULT_VERSION := 1.19.5
-VAULT_ARCH := linux_amd64
-VAULT_URL := https://releases.hashicorp.com/vault/$(VAULT_VERSION)/vault_$(VAULT_VERSION)_$(VAULT_ARCH).zip
-VAULT_BIN := $(WORK_DIR)/vault
+# Vault configuration (using OpenBao, an open-source Vault-compatible server)
+OPENBAO_VERSION := 2.5.0
+OPENBAO_URL := https://github.com/openbao/openbao/releases/download/v$(OPENBAO_VERSION)/bao_$(OPENBAO_VERSION)_Linux_x86_64.tar.gz
+VAULT_BIN := $(WORK_DIR)/bao
 VAULT_CONFIG := $(WORK_DIR)/vault-config.json
 VAULT_SSL_CONFIG := $(WORK_DIR)/vault-ssl-config.json
 VAULT_TOKEN_FILE := $(WORK_DIR)/vault-token
@@ -245,18 +242,18 @@ VAULT_CA_CERT := $(WORK_DIR)/vault-ca.pem
 VAULT_SERVER_KEY := $(WORK_DIR)/vault-server.key
 VAULT_SERVER_CERT := $(WORK_DIR)/vault-server.pem
 
-# Download and setup Vault binary
+# Download and setup OpenBao binary
 $(VAULT_BIN):
 	@if [ ! -f $(VAULT_BIN) ]; then \
-		printf "${BOLD}downloading vault binary${SGR0}\n"; \
+		printf "${BOLD}downloading openbao binary${SGR0}\n"; \
 		mkdir -p $(WORK_DIR) && \
 		cd $(WORK_DIR) && \
-		curl -L "$(VAULT_URL)" -o vault.zip && \
-		unzip vault.zip && \
-		chmod +x vault && \
-		rm vault.zip; \
+		curl -L "$(OPENBAO_URL)" -o bao.tar.gz && \
+		tar xzf bao.tar.gz bao && \
+		chmod +x bao && \
+		rm bao.tar.gz; \
 	else \
-		printf "${BOLD}vault binary already exists${SGR0}\n"; \
+		printf "${BOLD}openbao binary already exists${SGR0}\n"; \
 	fi
 
 # Create Vault configuration for kv1 engine
@@ -320,6 +317,12 @@ vault.PID: $(VAULT_BIN) $(VAULT_CONFIG)
 		$(VAULT_BIN) kv put secret/test-repo/test-type/no-data-key value="some-value" other="content" && \
 		$(VAULT_BIN) kv put secret/test-repo/test-type/empty-data data="" && \
 		$(VAULT_BIN) kv put secret/test-repo/test-type/json-preloaded data='{"service":"database","credentials":{"host":"db.example.com","port":5432,"username":"app_user","password":"secure_pass"},"settings":{"max_connections":100,"timeout":30}}' && \
+		$(VAULT_BIN) kv put secret/test-repo/test-type/numeric-string data="12345" && \
+		$(VAULT_BIN) kv put secret/test-repo/test-type/base64-encoded data="SGVsbG8gV29ybGQ=" && \
+		$(VAULT_BIN) kv put secret/test-repo/test-type/unicode-value data="こんにちは世界" && \
+		$(VAULT_BIN) kv put secret/test-repo/test-type/url-value data="https://user:pass@host:8080/path?key=val&foo=bar" && \
+		$(VAULT_BIN) kv put secret/test-repo/test-type/pem-like data="-----BEGIN CERTIFICATE-----MIIBxTCCAW..." && \
+		$(VAULT_BIN) kv put secret/test-repo/test-type/whitespace-value data="  leading and trailing  " && \
 		printf "${BOLD}vault server started and configured${SGR0}\n"; \
 	else \
 		printf "${BOLD}vault server already running (vault.PID exists)${SGR0}\n"; \
@@ -354,6 +357,11 @@ vault-ssl.PID: $(VAULT_BIN) $(VAULT_SSL_CONFIG)
 		$(VAULT_BIN) secrets enable -version=1 -path=secret kv && \
 		$(VAULT_BIN) kv put secret/test-repo/test-type/ssl-test data="ssl-test-secret-value" && \
 		$(VAULT_BIN) kv put secret/test-repo/test-type/ssl-skip-verify-test data="ssl-skip-verify-test-value" && \
+		$(VAULT_BIN) kv put secret/test-repo/test-type/ssl-numeric data="12345" && \
+		$(VAULT_BIN) kv put secret/test-repo/test-type/ssl-base64 data="SGVsbG8gV29ybGQ=" && \
+		$(VAULT_BIN) kv put secret/test-repo/test-type/ssl-unicode data="こんにちは世界" && \
+		$(VAULT_BIN) kv put secret/test-repo/test-type/ssl-url data="https://user:pass@host:8080/path?key=val&foo=bar" && \
+		$(VAULT_BIN) kv put secret/test-repo/test-type/ssl-pem-like data="-----BEGIN CERTIFICATE-----MIIBxTCCAW..." && \
 		printf "${BOLD}vault SSL server started and configured${SGR0}\n"; \
 	else \
 		printf "${BOLD}vault SSL server already running (vault-ssl.PID exists)${SGR0}\n"; \

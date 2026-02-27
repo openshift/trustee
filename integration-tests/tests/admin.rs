@@ -19,6 +19,10 @@ use crate::integration_tests::common::{KbsConfigType, PolicyType, TestHarness};
 #[case::set_policy_with_valid_key(KbsConfigType::EarTokenBuiltInRvps, true)]
 #[case::set_policy_with_invalid_key(KbsConfigType::EarTokenBuiltInRvps, false)]
 #[case::set_policy_with_deny_admin_backend(KbsConfigType::EarTokenBuiltInRvpsDenyAllAdmin, false)]
+#[case::set_policy_with_restricted_simple_backend(
+    KbsConfigType::EarTokenBuiltInRvpsSimpleRestrictedAdmin,
+    true
+)]
 #[tokio::test(flavor = "multi_thread", worker_threads = 4)]
 #[serial]
 async fn set_policy(#[case] test_config: KbsConfigType, #[case] valid_key: bool) -> Result<()> {
@@ -65,6 +69,21 @@ async fn set_policy(#[case] test_config: KbsConfigType, #[case] valid_key: bool)
         }
     }
 
+    if test_config == KbsConfigType::EarTokenBuiltInRvpsSimpleRestrictedAdmin {
+        match res {
+            std::result::Result::Ok(_) => {
+                bail!("Admin endpoints are restricted, but admin operation was successful.")
+            }
+            Err(e)
+                if e.to_string()
+                    .contains("Admin Token could not be verified for any admin persona") =>
+            {
+                return Ok(())
+            }
+            _ => (),
+        }
+    }
+
     res
 }
 
@@ -78,6 +97,10 @@ async fn set_policy(#[case] test_config: KbsConfigType, #[case] valid_key: bool)
 #[case::set_attestation_policy_with_deny_admin_backend(
     KbsConfigType::EarTokenBuiltInRvpsDenyAllAdmin,
     false
+)]
+#[case::set_attestation_policy_with_restricted_simple_backend(
+    KbsConfigType::EarTokenBuiltInRvpsSimpleRestrictedAdmin,
+    true
 )]
 #[tokio::test(flavor = "multi_thread", worker_threads = 4)]
 #[serial]
@@ -130,6 +153,21 @@ async fn set_attestation_policy(
         }
     }
 
+    if test_config == KbsConfigType::EarTokenBuiltInRvpsSimpleRestrictedAdmin {
+        match res {
+            std::result::Result::Ok(_) => {
+                bail!("Admin endpoints are restricted, but admin operation was successful.")
+            }
+            Err(e)
+                if e.to_string()
+                    .contains("Admin Token could not be verified for any admin persona") =>
+            {
+                return Ok(())
+            }
+            _ => (),
+        }
+    }
+
     res
 }
 
@@ -148,6 +186,10 @@ default executables = 97
 #[case::set_secret_with_valid_key(KbsConfigType::EarTokenBuiltInRvps, true)]
 #[case::set_secret_with_invalid_key(KbsConfigType::EarTokenBuiltInRvps, false)]
 #[case::set_secret_with_deny_admin_backend(KbsConfigType::EarTokenBuiltInRvpsDenyAllAdmin, false)]
+#[case::set_secret_with_restricted_simple_backend(
+    KbsConfigType::EarTokenBuiltInRvpsSimpleRestrictedAdmin,
+    true
+)]
 #[tokio::test(flavor = "multi_thread", worker_threads = 4)]
 #[serial]
 async fn set_secret(#[case] test_config: KbsConfigType, #[case] valid_key: bool) -> Result<()> {
@@ -190,6 +232,21 @@ async fn set_secret(#[case] test_config: KbsConfigType, #[case] valid_key: bool)
                 bail!("Admin endpoints disabled, but admin operation was successful")
             }
             Err(e) if e.to_string().contains("Admin endpoints disabled") => return Ok(()),
+            _ => (),
+        }
+    }
+
+    if test_config == KbsConfigType::EarTokenBuiltInRvpsSimpleRestrictedAdmin {
+        match res {
+            std::result::Result::Ok(_) => {
+                bail!("Admin endpoints are restricted, but admin operation was successful.")
+            }
+            Err(e)
+                if e.to_string()
+                    .contains("Admin Token could not be verified for any admin persona") =>
+            {
+                return Ok(())
+            }
             _ => (),
         }
     }
