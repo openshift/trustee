@@ -1,5 +1,5 @@
 # Use UBI to build.
-FROM registry.access.redhat.com/ubi10:10.1-1769521623 as builder
+FROM registry.access.redhat.com/ubi10:10.1-1772441712 as builder
 ARG ALIYUN=false
 
 RUN if [[ -n "${ACTIVATION_KEY}" && -n "${ORG_ID}" ]]; then \
@@ -51,7 +51,7 @@ RUN if [ $(uname -m) = "x86_64" ]; then \
 fi
 
 # Package UBI image.
-FROM registry.access.redhat.com/ubi10:10.1-1769521623
+FROM registry.access.redhat.com/ubi10:10.1-1772441712
 
 # Update packages. Get CVE fixes sooner.
 RUN dnf -y update && dnf clean all
