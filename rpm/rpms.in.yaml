@@ -18,6 +18,12 @@ packages:
   - device-mapper-devel
   - tpm2-tss-devel
   - protobuf-compiler
+  - name: sgx-libs
+    arches:
+      only: x86_64
+  - name: sgx-common
+    arches:
+      only: x86_64
 #  - git
 #  - tar
 #  - gzip
@@ -27,7 +33,7 @@ packages:
 contentOrigin:
   repofiles:
     - ./ubi.repo
-    - ./rhel-10-local.repo
+    - ./redhat.repo
 
 arches:
   - x86_64
