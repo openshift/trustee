@@ -1,6 +1,7 @@
 # Use UBI to build.
 FROM registry.access.redhat.com/ubi10:10.1-1769521623 as builder
 ARG ALIYUN=false
+ARG VAULT=true
 
 RUN if [[ -n "${ACTIVATION_KEY}" && -n "${ORG_ID}" ]]; then \
     rm -f /etc/rhsm-host && rm -f /etc/pki/entitlement-host; \
@@ -39,7 +40,7 @@ ENV OPENSSL_NO_VENDOR=1
 #  export OPENSSL_NO_VENDOR=1; \
 # fi && \
 RUN ARCH=$(uname -m) && \
-pushd kbs && make AS_FEATURE=${KBS_FEATURES} ALIYUN=${ALIYUN} ARCH=${ARCH} && make ARCH=${ARCH} install-kbs && popd
+pushd kbs && make AS_FEATURE=${KBS_FEATURES} ALIYUN=${ALIYUN} VAULT=${VAULT} ARCH=${ARCH} && make ARCH=${ARCH} install-kbs && popd
 
 
 # Check the sha256sum of the Intel provided RPMs on x86_64.
