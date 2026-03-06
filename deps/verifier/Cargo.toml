@@ -77,7 +77,7 @@ tokio = { workspace = true, optional = true }
 tracing.workspace = true
 intel-tee-quote-verification-rs = { git = "https://github.com/intel/confidential-computing.tee.dcap", tag = "DCAP_1.24", optional = true }
 strum.workspace = true
-veraison-apiclient = { git = "https://github.com/veraison/rust-apiclient", rev = "fe149cd", optional = true }
+veraison-apiclient = { git = "https://github.com/veraison/rust-apiclient", rev = "669299f72402467056f7686f739e135b3b576522", optional = true }
 ccatoken = { git = "https://github.com/veraison/rust-ccatoken", rev = "6d5b8db", optional = true }
 ear = { workspace = true, optional = true }
 x509-parser = { version = "0.18.0", optional = true }
