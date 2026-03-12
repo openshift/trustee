@@ -86,7 +86,7 @@ reqwest-middleware = "0.4.2"
 http-cache-reqwest = { version = "0.16.0", default-features = false, features = ["manager-moka"] }
 bitflags = { version = "2.10.0", features = ["serde"] }
 time = "0.3.41"
-nvml-wrapper = { git = "https://github.com/rust-nvml/nvml-wrapper", rev="7e0752f331" , optional = true, default-features = false, features = ["serde"]}
+nvml-wrapper = { git = "https://github.com/rust-nvml/nvml-wrapper", rev="29f91b8112a08afb7af606b4661502d3c48acbd4" , optional = true, default-features = false, features = ["serde"]}
 tss-esapi = { version = "7.5", optional = true }
 
 [build-dependencies]
