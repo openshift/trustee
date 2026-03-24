@@ -9,7 +9,7 @@ members = [
     "integration-tests",
     "tools/trustee-cli",
     "deps/key-value-storage",
-    "deps/policy-engine"
+    "deps/policy-engine",
 ]
 resolver = "2"
 
@@ -29,22 +29,20 @@ async-trait = "0.1.88"
 base64 = "0.22.1"
 byteorder = "1.5.0"
 cfg-if = "1.0.4"
-chrono = "0.4.41"
+chrono = "0.4.44"
 clap = { version = "4", features = ["derive"] }
 config = "0.15.19"
 educe = "0.6"
 ear = { git = "https://github.com/veraison/rust-ear.git", rev = "3d5fa46" }
-env_logger = "0.11.8"
 hex = "0.4.3"
-jwt-simple = { version = "0.12", default-features = false, features = [
-    "pure-rust",
-] }
 kbs_protocol = { git = "https://github.com/confidential-containers/guest-components.git", rev = "7be23a1", default-features = false }
 kbs-types = "0.14.0"
 kms = { git = "https://github.com/confidential-containers/guest-components.git", rev = "7be23a1", default-features = false }
-jsonwebtoken = { version = "10", default-features = false, features = ["aws_lc_rs"] }
+jsonwebtoken = { version = "10", default-features = false, features = [
+    "aws_lc_rs",
+    "use_pem",
+] }
 lazy_static = "1.4.0"
-log = "0.4.29"
 openssl = "0.10.75"
 p256 = "0.13.2"
 p521 = "0.13.2"
@@ -63,20 +61,24 @@ rstest = "0.26.1"
 serde = { version = "1.0", features = ["derive"] }
 serde_json = "1.0.143"
 serde_qs = "0.15.0"
-serde_with = { version = "3.16.1", features = ["base64", "hex"] }
+serde_with = { version = "3.17.0", features = ["base64", "hex"] }
 serial_test = { version = "3.2.0", features = ["async"] }
 sha2 = "0.10"
 shadow-rs = "1.7.0"
-strum = { version = "0.27", features = ["derive"] }
+strum = { version = "0.28", features = ["derive"] }
 thiserror = "2.0"
 tokio = { version = "1", features = ["full"], default-features = false }
 toml = "0.9.10"
-tempfile = "3.24.0"
+tempfile = "3.25.0"
 tonic = "0.14"
 tonic-prost = "0.14"
 tonic-prost-build = "0.14"
+rand = "0.8.5"
+rsa = { version = "0.9.10", features = ["sha2"] }
+time = { version = "0.3.47", features = ["std"] }
 tracing = "0.1.44"
 tracing-subscriber = { version = "0.3.22", features = ["env-filter"] }
+uuid = { version = "1.21.0", features = ["v4"] }
 
 [patch.crates-io]
 ear = { git = "https://github.com/veraison/rust-ear.git", rev = "3d5fa46" }

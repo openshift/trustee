@@ -2,9 +2,9 @@
 // Licensed under the Apache License, Version 2.0, see LICENSE for details.
 // SPDX-License-Identifier: Apache-2.0
 
-use log::error;
 use strum::AsRefStr;
 use thiserror::Error;
+use tracing::error;
 
 pub type Result<T> = std::result::Result<T, Error>;
 
@@ -26,7 +26,7 @@ pub enum Error {
     NoPublicKeyGiven,
 
     #[error("Failed to parse admin public key")]
-    ParsePublicKey(#[from] jwt_simple::Error),
+    ParsePublicKey(#[from] jsonwebtoken::errors::Error),
 
     #[error("Failed to parse HTTP Auth Bearer header")]
     ParseAuthHeaderFailed(#[from] actix_web::error::ParseError),
