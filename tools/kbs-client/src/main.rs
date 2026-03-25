@@ -10,6 +10,7 @@ use base64::Engine;
 use clap::{Args, Parser, Subcommand};
 use serde_json::json;
 use std::path::PathBuf;
+use tracing_subscriber::{fmt, EnvFilter};
 
 #[derive(Parser)]
 #[clap(name = "KBS client")]
@@ -150,8 +151,12 @@ enum ConfigCommands {
         resource_file: PathBuf,
     },
 
-    /// List reference values registered with RVPS
-    GetReferenceValues,
+    /// Get reference value from RVPS given reference value ID
+    GetReferenceValue {
+        /// The ID of the reference value.
+        #[clap(long, value_parser)]
+        id: String,
+    },
 
     /// Add a sample reference value to the RVPS.
     /// The request will be proxied through the KBS
@@ -180,8 +185,15 @@ enum ConfigCommands {
 
 #[tokio::main(flavor = "current_thread")]
 async fn main() -> Result<()> {
-    env_logger::init_from_env(env_logger::Env::new().default_filter_or("info"));
+    let env_filter = match std::env::var_os("RUST_LOG") {
+        Some(_) => EnvFilter::try_from_default_env().expect("RUST_LOG is present but invalid"),
+        None => EnvFilter::new("info"),
+    };
 
+    fmt()
+        .with_env_filter(env_filter)
+        .with_writer(std::io::stderr)
+        .init();
     let cli = Cli::parse();
 
     let kbs_cert = match cli.cert_file {
@@ -361,9 +373,9 @@ async fn main() -> Result<()> {
                     .await?;
                     println!("Reference Values Updated");
                 }
-                ConfigCommands::GetReferenceValues => {
+                ConfigCommands::GetReferenceValue { id } => {
                     let values =
-                        kbs_client::get_rvs(cli.url, auth_key.clone(), kbs_cert.clone()).await?;
+                        kbs_client::get_rv(cli.url, auth_key.clone(), kbs_cert.clone(), id).await?;
                     println!("{:?}", values);
                 }
             }

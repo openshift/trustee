@@ -18,20 +18,15 @@ packages:
   - device-mapper-devel
   - tpm2-tss-devel
   - protobuf-compiler
-#  - git
-#  - tar
-#  - gzip
-#  - jq
-#  - runc
 
 contentOrigin:
   repofiles:
     - ./ubi.repo
-    - ./rhel-10-local.repo
+    - ./redhat.repo
 
 arches:
   - x86_64
   - s390x
 
 context:
-  image: registry.access.redhat.com/ubi10:10.1-1769521623
+  image: registry.redhat.io/ubi9:9.7

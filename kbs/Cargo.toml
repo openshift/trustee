@@ -53,41 +53,40 @@ cfg-if.workspace = true
 clap = { workspace = true, features = ["derive", "env"] }
 config.workspace = true
 concat-kdf = "0.1.0"
-cryptoki = { version = "0.10.0", optional = true }
+cryptoki = { version = "0.12.0", optional = true }
 educe.workspace = true
-env_logger.workspace = true
 hex.workspace = true
 jsonwebtoken = { workspace = true, default-features = false }
-jwt-simple.workspace = true
 kbs-types.workspace = true
 kms = { workspace = true, default-features = false }
 lazy_static.workspace = true
-log.workspace = true
 mobc = { version = "0.9.0", optional = true }
 p256 = { workspace = true, features = ["ecdh"] }
 p521 = { workspace = true, features = ["ecdh"] }
 prometheus = "0.14.0"
 prost = { workspace = true, optional = true }
-rand = "0.8.5"
+rand.workspace = true
 regex = "1.12.2"
 regorus.workspace = true
 reqwest = { workspace = true, features = ["json"] }
-rsa = { version = "0.9.10", features = ["sha2"] }
+rsa.workspace = true
 scc = "2"
-serde_qs.workspace = true
 semver = "1.0.16"
 serde = { workspace = true, features = ["derive"] }
 serde_json.workspace = true
 serde_with.workspace = true
 sha2.workspace = true
+shadow-rs.workspace = true
 strum.workspace = true
 tempfile.workspace = true
 thiserror.workspace = true
-time = { version = "0.3.40", features = ["std"] }
+time.workspace = true
 tokio.workspace = true
 tonic = { workspace = true, optional = true }
 tonic-prost = { workspace = true, optional = true }
-uuid = { version = "1.21.0", features = ["serde", "v4"] }
+tracing.workspace = true
+tracing-subscriber.workspace = true
+uuid = { workspace = true, features = ["serde"] }
 openssl.workspace = true
 az-cvm-vtpm = { version = "0.8.0", default-features = false, optional = true }
 vaultrs = { version = "0.7.4", optional = true }
@@ -115,9 +114,10 @@ josekit = "0.10.3"
 tempfile.workspace = true
 rstest.workspace = true
 reference-value-provider-service.path = "../rvps"
-serial_test = "3.0"
-toml = "0.9"
+serial_test.workspace = true
+toml.workspace = true
 
 [build-dependencies]
 tonic-prost-build.workspace = true
 chrono.workspace = true
+shadow-rs.workspace = true
