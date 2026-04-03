@@ -30,6 +30,9 @@ spec:
     value: '{{revision}}'
   - name: build-source-image
     value: "true"
+  - name: build-args
+    value:
+    - NAME=build-of-trustee/trustee-rhel9
   - name: build-platforms
     value:
     - linux/x86_64
@@ -364,7 +367,7 @@ spec:
         - name: name
           value: clair-scan
         - name: bundle
-          value: quay.io/konflux-ci/tekton-catalog/task-clair-scan:0.3@sha256:654b989d7cdc03d082e56f216a29de04847215ee379a8d9ca315e453ad2b15c2
+          value: quay.io/konflux-ci/tekton-catalog/task-clair-scan:0.3@sha256:3fa03be0280f33d7070ea53f26d53e727199737a7a2b9a59a95071ae40a999ac
         - name: kind
           value: task
         resolver: bundles
@@ -498,7 +501,7 @@ spec:
         - name: name
           value: coverity-availability-check
         - name: bundle
-          value: quay.io/konflux-ci/tekton-catalog/task-coverity-availability-check:0.2@sha256:267d5bc069a0323f41e24732ddfd1057e5c639e853d1e620c67505fab78f1301
+          value: quay.io/konflux-ci/tekton-catalog/task-coverity-availability-check:0.2@sha256:de35caf2f090e3275cfd1019ea50d9662422e904fb4aebd6ea29fb53a1ad57f5
         - name: kind
           value: task
         resolver: bundles
@@ -524,7 +527,7 @@ spec:
         - name: name
           value: sast-shell-check-oci-ta
         - name: bundle
-          value: quay.io/konflux-ci/tekton-catalog/task-sast-shell-check-oci-ta:0.1@sha256:e7a51575f9188a1461d4520da25aaa4efdd3b896c97dc750941fa22840e55c13
+          value: quay.io/konflux-ci/tekton-catalog/task-sast-shell-check-oci-ta:0.1@sha256:c89a2bcf408ede50b161005859c76868f8007bb2a5daa06c1effe979b02145d7
         - name: kind
           value: task
         resolver: bundles
@@ -612,7 +615,7 @@ spec:
         - name: name
           value: rpms-signature-scan
         - name: bundle
-          value: quay.io/konflux-ci/tekton-catalog/task-rpms-signature-scan:0.2@sha256:fb6c97a57e221fa106a8b45be3e12c49e7124a3a8e2a0f0d5fbaeb17b5bf68a5
+          value: quay.io/konflux-ci/tekton-catalog/task-rpms-signature-scan:0.2@sha256:0eb4cfb41181a158b6761c990cc7a9f7f77c70f7ff19bf276009c6ef59c9da5e
         - name: kind
           value: task
         resolver: bundles
