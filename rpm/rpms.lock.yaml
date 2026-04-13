@@ -207,13 +207,13 @@ arches:
     name: go-srpm-macros
     evr: 3.6.0-13.el9_7
     sourcerpm: go-rpm-macros-3.6.0-13.el9_7.src.rpm
-  - url: https://cdn.redhat.com/content/dist/rhel9/9/s390x/appstream/os/Packages/k/kernel-headers-5.14.0-611.42.1.el9_7.s390x.rpm
+  - url: https://cdn.redhat.com/content/dist/rhel9/9/s390x/appstream/os/Packages/k/kernel-headers-5.14.0-611.47.1.el9_7.s390x.rpm
     repoid: rhel-9-for-s390x-appstream-rpms
-    size: 3014129
-    checksum: sha256:69c5b69a5fea79f2dd38428a6363d03eb2e2480cb55270b885abd233eb620bf7
+    size: 3017165
+    checksum: sha256:bccf67fd38fb285adc59ba6a0f0427553e39b917b699258cb8a7da8c7ca2a6dd
     name: kernel-headers
-    evr: 5.14.0-611.42.1.el9_7
-    sourcerpm: kernel-5.14.0-611.42.1.el9_7.src.rpm
+    evr: 5.14.0-611.47.1.el9_7
+    sourcerpm: kernel-5.14.0-611.47.1.el9_7.src.rpm
   - url: https://cdn.redhat.com/content/dist/rhel9/9/s390x/appstream/os/Packages/k/kernel-srpm-macros-1.0-14.el9.noarch.rpm
     repoid: rhel-9-for-s390x-appstream-rpms
     size: 14098
@@ -2146,13 +2146,27 @@ arches:
     name: sombok
     evr: 2.4.0-16.el9
     sourcerpm: sombok-2.4.0-16.el9.src.rpm
-  - url: https://cdn.redhat.com/content/dist/rhel9/9/s390x/appstream/os/Packages/s/systemd-devel-252-55.el9_7.7.s390x.rpm
+  - url: https://cdn.redhat.com/content/dist/rhel9/9/s390x/appstream/os/Packages/s/systemd-devel-252-55.el9_7.8.s390x.rpm
     repoid: rhel-9-for-s390x-appstream-rpms
-    size: 685200
-    checksum: sha256:6bf0b1470721e5df5ebbe421dd1360452f705dccb539de489286b0a0341a5f96
+    size: 670717
+    checksum: sha256:cd9855854bb238f705e52872ff1782124153fc0c6c561418c3120c44eccc2717
     name: systemd-devel
-    evr: 252-55.el9_7.7
-    sourcerpm: systemd-252-55.el9_7.7.src.rpm
+    evr: 252-55.el9_7.8
+    sourcerpm: systemd-252-55.el9_7.8.src.rpm
+  - url: https://cdn.redhat.com/content/dist/rhel9/9/s390x/baseos/os/Packages/s/systemd-libs-252-55.el9_7.8.s390x.rpm
+    repoid: rhel-9-for-s390x-baseos-rpms
+    size: 625189
+    checksum: sha256:3207a84729736a7a06063de7871eb35a28e6d85f20a9598ac0a3d73581923c27
+    name: systemd-libs
+    evr: 252-55.el9_7.8
+    sourcerpm: systemd-252-55.el9_7.8.src.rpm
+  - url: https://cdn.redhat.com/content/dist/rhel9/9/s390x/baseos/os/Packages/s/systemd-pam-252-55.el9_7.8.s390x.rpm
+    repoid: rhel-9-for-s390x-baseos-rpms
+    size: 257525
+    checksum: sha256:2edc22c93883c9e5dd9da2936005db8fe1bad378ab42f22d55977d7fe6e20cb4
+    name: systemd-pam
+    evr: 252-55.el9_7.8
+    sourcerpm: systemd-252-55.el9_7.8.src.rpm
   - url: https://cdn.redhat.com/content/dist/rhel9/9/s390x/appstream/os/Packages/s/systemtap-sdt-devel-5.3-3.el9.s390x.rpm
     repoid: rhel-9-for-s390x-appstream-rpms
     size: 70543
@@ -2647,13 +2661,13 @@ arches:
     name: go-srpm-macros
     evr: 3.6.0-13.el9_7
     sourcerpm: go-rpm-macros-3.6.0-13.el9_7.src.rpm
-  - url: https://cdn.redhat.com/content/dist/rhel9/9/x86_64/appstream/os/Packages/k/kernel-headers-5.14.0-611.42.1.el9_7.x86_64.rpm
+  - url: https://cdn.redhat.com/content/dist/rhel9/9/x86_64/appstream/os/Packages/k/kernel-headers-5.14.0-611.47.1.el9_7.x86_64.rpm
     repoid: rhel-9-for-x86_64-appstream-rpms
-    size: 3022957
-    checksum: sha256:9e5cf3e6a7d3aca6008da1f64dc2a5dbf8466645154f0ccfccee4bbd4de7e6f2
+    size: 3025981
+    checksum: sha256:551f1d5cb5981a364fd119aaeacaad54e69c886308a7aaba3b4fa2e507b58d5d
     name: kernel-headers
-    evr: 5.14.0-611.42.1.el9_7
-    sourcerpm: kernel-5.14.0-611.42.1.el9_7.src.rpm
+    evr: 5.14.0-611.47.1.el9_7
+    sourcerpm: kernel-5.14.0-611.47.1.el9_7.src.rpm
   - url: https://cdn.redhat.com/content/dist/rhel9/9/x86_64/appstream/os/Packages/k/kernel-srpm-macros-1.0-14.el9.noarch.rpm
     repoid: rhel-9-for-x86_64-appstream-rpms
     size: 14098
@@ -4572,13 +4586,27 @@ arches:
     name: sombok
     evr: 2.4.0-16.el9
     sourcerpm: sombok-2.4.0-16.el9.src.rpm
-  - url: https://cdn.redhat.com/content/dist/rhel9/9/x86_64/appstream/os/Packages/s/systemd-devel-252-55.el9_7.7.x86_64.rpm
+  - url: https://cdn.redhat.com/content/dist/rhel9/9/x86_64/appstream/os/Packages/s/systemd-devel-252-55.el9_7.8.x86_64.rpm
     repoid: rhel-9-for-x86_64-appstream-rpms
-    size: 685127
-    checksum: sha256:517f07d1f2714109243632363e1ab5f3fe7af3af4dc33b8926062d9489d71215
+    size: 670553
+    checksum: sha256:39e92c6c855327a331805b655526c01b311da84d5970f5939fa9b0c680397570
     name: systemd-devel
-    evr: 252-55.el9_7.7
-    sourcerpm: systemd-252-55.el9_7.7.src.rpm
+    evr: 252-55.el9_7.8
+    sourcerpm: systemd-252-55.el9_7.8.src.rpm
+  - url: https://cdn.redhat.com/content/dist/rhel9/9/x86_64/baseos/os/Packages/s/systemd-libs-252-55.el9_7.8.x86_64.rpm
+    repoid: rhel-9-for-x86_64-baseos-rpms
+    size: 662668
+    checksum: sha256:59231ce96ab64d81527771954195722d61e8914786dd35b185cefa6a10df6c3e
+    name: systemd-libs
+    evr: 252-55.el9_7.8
+    sourcerpm: systemd-252-55.el9_7.8.src.rpm
+  - url: https://cdn.redhat.com/content/dist/rhel9/9/x86_64/baseos/os/Packages/s/systemd-pam-252-55.el9_7.8.x86_64.rpm
+    repoid: rhel-9-for-x86_64-baseos-rpms
+    size: 268291
+    checksum: sha256:3cb33a319f67824d3beb8b2f2356995695b4c3ac77ae66c8e6c3315ef822d0bc
+    name: systemd-pam
+    evr: 252-55.el9_7.8
+    sourcerpm: systemd-252-55.el9_7.8.src.rpm
   - url: https://cdn.redhat.com/content/dist/rhel9/9/x86_64/appstream/os/Packages/s/systemtap-sdt-devel-5.3-3.el9.x86_64.rpm
     repoid: rhel-9-for-x86_64-appstream-rpms
     size: 70576

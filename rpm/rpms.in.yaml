@@ -18,6 +18,8 @@ packages:
   - device-mapper-devel
   - tpm2-tss-devel
   - protobuf-compiler
+  - systemd-libs
+  - systemd-pam
 
 contentOrigin:
   repofiles:
