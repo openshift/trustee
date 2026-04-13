@@ -27,6 +27,9 @@ spec:
     value: '{{revision}}'
   - name: build-source-image
     value: "true"
+  - name: build-args
+    value:
+    - NAME=build-of-trustee/trustee-rhel9
   - name: build-platforms
     value:
     - linux/x86_64
