@@ -105,7 +105,7 @@ http-cache-reqwest = { version = "0.16.0", default-features = false, features = 
 ] }
 bitflags = { version = "2.10.0", features = ["serde"] }
 time.workspace = true
-nvml-wrapper = { version = "0.11.0", optional = true, default-features = false, features = [
+nvml-wrapper = { version = "0.12.0", optional = true, default-features = false, features = [
     "serde",
 ] }
 tss-esapi = { version = "7.5", optional = true }
