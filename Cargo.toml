@@ -33,7 +33,7 @@ chrono = "0.4.44"
 clap = { version = "4", features = ["derive"] }
 config = "0.15.19"
 educe = "0.6"
-ear = { git = "https://github.com/veraison/rust-ear.git", rev = "3d5fa46" }
+ear = { git = "https://github.com/veraison/rust-ear.git", rev = "c6c517e9964d072c1a59051203170a26b78daf83" }
 hex = "0.4.3"
 kbs_protocol = { git = "https://github.com/confidential-containers/guest-components.git", rev = "7be23a1", default-features = false }
 kbs-types = "0.14.0"
