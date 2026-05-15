@@ -5,17 +5,40 @@
 use crate::admin::AdminConfig;
 use crate::plugins::PluginsConfig;
 use crate::token::AttestationTokenVerifierConfig;
-use anyhow::anyhow;
+use anyhow::{anyhow, bail, Context, Result};
 use clap::Parser;
 use config::{Config, File};
 use key_value_storage::{KeyValueStorageType, StorageBackendConfig};
 use serde::Deserialize;
 use std::net::SocketAddr;
 use std::path::{Path, PathBuf};
+use strum::AsRefStr;
 
 const DEFAULT_INSECURE_HTTP: bool = false;
 const DEFAULT_SOCKET: &str = "127.0.0.1:8080";
 const DEFAULT_PAYLOAD_REQUEST_SIZE: u32 = 2;
+
+/// TLS security profile
+#[derive(Clone, Debug, Default, Deserialize, PartialEq)]
+#[serde(rename_all = "lowercase")]
+pub enum TlsProfile {
+    Old,
+    #[default]
+    Intermediate,
+    Modern,
+    Custom,
+}
+
+/// TLS protocol version
+#[derive(Clone, Debug, Deserialize, PartialEq, AsRefStr)]
+pub enum TlsVersion {
+    #[serde(rename = "1.2")]
+    #[strum(serialize = "1.2")]
+    Tls12,
+    #[serde(rename = "1.3")]
+    #[strum(serialize = "1.3")]
+    Tls13,
+}
 
 #[derive(Clone, Debug, Deserialize, PartialEq)]
 #[serde(default)]
@@ -39,6 +62,21 @@ pub struct HttpServerConfig {
     /// Number of worker threads for the actix-web server.
     /// If not specified, defaults to the number of logical CPU cores.
     pub worker_count: Option<usize>,
+
+    /// TLS security profile: old, intermediate, modern, or custom
+    pub tls_profile: TlsProfile,
+
+    /// Minimum TLS version (for custom profile)
+    pub tls_min_version: Option<TlsVersion>,
+
+    /// Maximum TLS version (for custom profile)
+    pub tls_max_version: Option<TlsVersion>,
+
+    /// TLS cipher suites (colon-separated OpenSSL cipher list)
+    pub tls_ciphers: Option<String>,
+
+    /// TLS groups for key exchange (colon-separated list)
+    pub tls_groups: Option<String>,
 }
 
 impl Default for HttpServerConfig {
@@ -50,7 +88,48 @@ impl Default for HttpServerConfig {
             insecure_http: DEFAULT_INSECURE_HTTP,
             payload_request_size: DEFAULT_PAYLOAD_REQUEST_SIZE,
             worker_count: None,
+            tls_profile: TlsProfile::default(),
+            tls_min_version: None,
+            tls_max_version: None,
+            tls_ciphers: None,
+            tls_groups: None,
         }
+    }
+}
+
+impl HttpServerConfig {
+    /// Validate TLS configuration consistency
+    pub fn validate_tls_config(&self) -> Result<()> {
+        // Warn if non-custom profile has custom fields
+        if self.tls_profile != TlsProfile::Custom
+            && (self.tls_min_version.is_some()
+                || self.tls_max_version.is_some()
+                || self.tls_ciphers.is_some()
+                || self.tls_groups.is_some())
+        {
+            tracing::warn!(
+                "TLS profile is {:?} but custom fields are set. Custom fields will override profile defaults.",
+                self.tls_profile
+            );
+        }
+
+        // Validate version range
+        if let (Some(min_version), Some(max_version)) =
+            (&self.tls_min_version, &self.tls_max_version)
+        {
+            if matches!(
+                (min_version, max_version),
+                (TlsVersion::Tls13, TlsVersion::Tls12)
+            ) {
+                bail!(
+                    "tls_min_version ({}) cannot be greater than tls_max_version ({})",
+                    min_version.as_ref(),
+                    max_version.as_ref()
+                );
+            }
+        }
+
+        Ok(())
     }
 }
 
@@ -102,8 +181,17 @@ impl TryFrom<&Path> for KbsConfig {
             .add_source(File::with_name(config_path.to_str().unwrap()))
             .build()?;
 
-        c.try_deserialize()
-            .map_err(|e| anyhow!("invalid config: {}", e))
+        let config: KbsConfig = c
+            .try_deserialize()
+            .map_err(|e| anyhow!("invalid config: {}", e));
+
+        // Validate TLS configuration
+        config
+            .http_server
+            .validate_tls_config()
+            .context("TLS configuration error")?;
+
+        Ok(config)
     }
 }
 
@@ -127,7 +215,8 @@ mod tests {
             AdminBackendType, AdminConfig,
         },
         config::{
-            HttpServerConfig, DEFAULT_INSECURE_HTTP, DEFAULT_PAYLOAD_REQUEST_SIZE, DEFAULT_SOCKET,
+            HttpServerConfig, TlsProfile, TlsVersion, DEFAULT_INSECURE_HTTP,
+            DEFAULT_PAYLOAD_REQUEST_SIZE, DEFAULT_SOCKET,
         },
         plugins::{
             implementations::{RepositoryConfig, SampleConfig},
@@ -176,6 +265,11 @@ mod tests {
             insecure_http: false,
             payload_request_size: DEFAULT_PAYLOAD_REQUEST_SIZE,
             worker_count: None,
+            tls_profile: TlsProfile::default(),
+            tls_min_version: None,
+            tls_max_version: None,
+            tls_ciphers: None,
+            tls_groups: None,
         },
         admin: AdminConfig {
             admin_backend: AdminBackendType::DenyAll,
@@ -231,6 +325,11 @@ mod tests {
             insecure_http: DEFAULT_INSECURE_HTTP,
             payload_request_size: DEFAULT_PAYLOAD_REQUEST_SIZE,
             worker_count: None,
+            tls_profile: TlsProfile::default(),
+            tls_min_version: None,
+            tls_max_version: None,
+            tls_ciphers: None,
+            tls_groups: None,
         },
         admin: AdminConfig {
             admin_backend: AdminBackendType::DenyAll,
@@ -277,6 +376,11 @@ mod tests {
             insecure_http: false,
             payload_request_size: DEFAULT_PAYLOAD_REQUEST_SIZE,
             worker_count: None,
+            tls_profile: TlsProfile::default(),
+            tls_min_version: None,
+            tls_max_version: None,
+            tls_ciphers: None,
+            tls_groups: None,
         },
         admin: AdminConfig {
             admin_backend: AdminBackendType::DenyAll,
@@ -320,6 +424,11 @@ mod tests {
             insecure_http: true,
             payload_request_size: DEFAULT_PAYLOAD_REQUEST_SIZE,
             worker_count: None,
+            tls_profile: TlsProfile::default(),
+            tls_min_version: None,
+            tls_max_version: None,
+            tls_ciphers: None,
+            tls_groups: None,
         },
         admin: AdminConfig {
             admin_backend: AdminBackendType::Simple(SimpleAdminConfig {
@@ -373,6 +482,11 @@ mod tests {
             insecure_http: true,
             payload_request_size: DEFAULT_PAYLOAD_REQUEST_SIZE,
             worker_count: None,
+            tls_profile: TlsProfile::default(),
+            tls_min_version: None,
+            tls_max_version: None,
+            tls_ciphers: None,
+            tls_groups: None,
         },
         admin: AdminConfig {
             admin_backend: AdminBackendType::InsecureAllowAll,
@@ -417,6 +531,11 @@ mod tests {
             insecure_http: true,
             payload_request_size: DEFAULT_PAYLOAD_REQUEST_SIZE,
             worker_count: None,
+            tls_profile: TlsProfile::default(),
+            tls_min_version: None,
+            tls_max_version: None,
+            tls_ciphers: None,
+            tls_groups: None,
         },
         admin: AdminConfig {
             admin_backend: AdminBackendType::DenyAll,
