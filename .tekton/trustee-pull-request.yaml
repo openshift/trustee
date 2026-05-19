@@ -164,6 +164,8 @@ spec:
         value: $(params.image-expires-after)
       - name: dev-package-managers
         value: "true"
+      - name: enable-package-registry-proxy
+        value: "true"
       runAfter:
       - init
       taskRef:
@@ -189,6 +191,8 @@ spec:
       - name: ociArtifactExpiresAfter
         value: $(params.image-expires-after)
       - name: dev-package-managers
+        value: "true"
+      - name: enable-package-registry-proxy
         value: "true"
       runAfter:
       - clone-repository
