@@ -37,7 +37,7 @@ ear = { git = "https://github.com/veraison/rust-ear.git", rev = "3d5fa46" }
 hex = "0.4.3"
 kbs_protocol = { git = "https://github.com/confidential-containers/guest-components.git", rev = "7be23a1", default-features = false }
 kbs-types = "0.14.0"
-kms = { git = "https://github.com/confidential-containers/guest-components.git", rev = "7be23a1", default-features = false }
+kms = { git = "https://github.com/confidential-containers/guest-components.git", rev = "9488375628761607636190f8b95fc31979b7107f", default-features = false }
 jsonwebtoken = { version = "10", default-features = false, features = [
     "aws_lc_rs",
     "use_pem",
