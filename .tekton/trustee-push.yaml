@@ -155,6 +155,8 @@ spec:
         value: $(params.output-image).git
       - name: dev-package-managers
         value: "true"
+      - name: enable-package-registry-proxy
+        value: "true"
       runAfter:
       - init
       taskRef:
@@ -178,6 +180,8 @@ spec:
       - name: ociStorage
         value: $(params.output-image).prefetch
       - name: dev-package-managers
+        value: "true"
+      - name: enable-package-registry-proxy
         value: "true"
       runAfter:
       - clone-repository
