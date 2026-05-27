@@ -84,7 +84,7 @@ serde_with = { workspace = true, optional = true }
 # note: this one is overriden in the workspace Cargo.toml, because the
 # 7.1.0 version doesn't build w/ sev + serde features enabled. The
 # override can be removed once 7.2.0 is released
-sev = { version = "7", default-features = false, features = [
+sev = { version = "8", default-features = false, features = [
     "openssl",
     "snp",
     "serde",
