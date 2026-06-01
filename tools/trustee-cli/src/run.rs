@@ -1,9 +1,8 @@
 use anyhow::Result;
 use core::net::SocketAddr;
 use kbs::admin::{simple::SimplePersonaConfig, AdminBackendType};
-use kbs::attestation::config::AttestationServiceConfig::CoCoASBuiltIn;
-use kbs::plugins::PluginsConfig::{self, ResourceStorage};
-use kbs::plugins::RepositoryConfig::{self, LocalFs};
+use kbs::plugins::PluginsConfig;
+use kbs::plugins::RepositoryConfig;
 use kbs::{ApiServer, KbsConfig};
 use openssl::asn1::Asn1Time;
 use openssl::bn::MsbOption;
@@ -14,7 +13,7 @@ use openssl::x509::extension::SubjectAlternativeName;
 use openssl::x509::{X509NameBuilder, X509};
 use std::fs::write;
 use std::path::{Path, PathBuf};
-use tracing::{debug, info, warn};
+use tracing::{debug, warn};
 
 use crate::{write_new_auth_key_pair, write_pem};
 
@@ -23,28 +22,34 @@ pub(crate) async fn trustee_run(
     config_file: Option<PathBuf>,
     allow_all: bool,
 ) -> Result<()> {
-    let config = get_config(config_file, allow_all, trustee_home_dir)?;
+    let config = get_config(config_file, trustee_home_dir)?;
     let api_server = ApiServer::new(config).await?;
+
     // Start the kbs::ApiServer in the foreground.
+    // Set the policy path.
+    if allow_all {
+        warn!("Using policy allow_all. This is for development only.");
+        api_server
+            .policy_engine
+            .set_policy(
+                "resource-policy",
+                include_str!("../../../kbs/sample_policies/allow_all.rego"),
+                true,
+            )
+            .await?;
+    }
+
     api_server.server()?.await?;
     Ok(())
 }
 
 /// get_config initializes a KbsConfig from the CLI arguments and environment.
-fn get_config(
-    config_file: Option<PathBuf>,
-    allow_all: bool,
-    trustee_home_dir: &Path,
-) -> Result<KbsConfig> {
+fn get_config(config_file: Option<PathBuf>, trustee_home_dir: &Path) -> Result<KbsConfig> {
     let mut config = if let Some(path) = config_file {
         KbsConfig::try_from(path.as_path())?
     } else {
         KbsConfig::default()
     };
-
-    // Set home dir for policy engine
-    config.policy_engine.policy_path =
-        replace_base_dir(config.policy_engine.policy_path.as_path(), trustee_home_dir);
 
     if config.plugins.is_empty() {
         config
@@ -52,43 +57,10 @@ fn get_config(
             .push(PluginsConfig::ResourceStorage(RepositoryConfig::default()));
     }
 
-    // Set home dir for plugins
-    config.plugins.iter_mut().for_each(|plugins_config| {
-        if let ResourceStorage(LocalFs(repo_desc)) = plugins_config {
-            repo_desc.dir_path = replace_base_dir(Path::new(&repo_desc.dir_path), trustee_home_dir)
-                .to_string_lossy()
-                .into();
-        }
-    });
-
-    // Set home dir for CoCoASBuiltIn attestation service
-    if let CoCoASBuiltIn(as_config) = &mut config.attestation_service.attestation_service {
-        as_config.work_dir = replace_base_dir(as_config.work_dir.as_path(), trustee_home_dir);
-
-        // Handle RVPS config paths
-        if let attestation_service::rvps::RvpsConfig::BuiltIn(rvps_config) =
-            &mut as_config.rvps_config
-        {
-            if let reference_value_provider_service::storage::ReferenceValueStorageConfig::LocalFs(
-                local_fs_config,
-            ) = &mut rvps_config.storage
-            {
-                local_fs_config.file_path =
-                    replace_base_dir(Path::new(&local_fs_config.file_path), trustee_home_dir)
-                        .to_string_lossy()
-                        .into_owned();
-            }
-        }
-
-        // Handle attestation token broker paths
-
-        as_config.attestation_token_broker.policy_dir = replace_base_dir(
-            Path::new(&as_config.attestation_token_broker.policy_dir),
-            trustee_home_dir,
-        )
-        .to_string_lossy()
-        .into_owned();
-    }
+    config
+        .storage_backend
+        .backends
+        .replace_base_dir(trustee_home_dir);
 
     // Automatically create a key pair and use it for admin authentication if it doesn't exist in the configuration.
     if let AdminBackendType::Simple(ref mut config) = config.admin.admin_backend {
@@ -104,17 +76,18 @@ fn get_config(
     // Generate and use a self-signed certificate if there is none configured.
     // Intended to discourage using the service in the clear.
     if !config.http_server.insecure_http {
-        if config.http_server.private_key.is_none() {
+        if config.http_server.tls.private_key.is_none() {
             let (private_path, _) = ensure_https_key_pair(trustee_home_dir)?;
 
-            config.http_server.private_key = Some(private_path);
+            config.http_server.tls.private_key = Some(private_path);
         }
 
-        if config.http_server.certificate.is_none() {
+        if config.http_server.tls.certificate.is_none() {
             let private_key = {
                 let private_key_data = std::fs::read(
                     config
                         .http_server
+                        .tls
                         .private_key
                         .as_ref()
                         .expect("private_key should be already set in config"),
@@ -126,28 +99,8 @@ fn get_config(
             let cert_path = trustee_home_dir.join("https_cert_cache.pem");
             write(&cert_path, &cert.to_pem()?)?;
 
-            config.http_server.certificate = Some(cert_path);
+            config.http_server.tls.certificate = Some(cert_path);
         }
-    }
-
-    // Set the policy path.
-    if allow_all {
-        warn!("Using policy allow_all. This is for development only.");
-        config.policy_engine.policy_path = trustee_home_dir.join("allow_all.rego");
-        std::fs::write(
-            &config.policy_engine.policy_path,
-            include_bytes!("../../../kbs/sample_policies/allow_all.rego"),
-        )?;
-    } else if !config.policy_engine.policy_path.exists() {
-        // Default to the deny_all policy if there is none configured.
-        // Intended to ease the deployment process as it allows to have
-        // a service up and running and complete the configuration gradually.
-        info!("Using policy deny_all. You may want to configure a less restrictive policy for a functional setup.");
-        config.policy_engine.policy_path = trustee_home_dir.join("deny_all.rego");
-        std::fs::write(
-            &config.policy_engine.policy_path,
-            include_bytes!("../../../kbs/sample_policies/deny_all.rego"),
-        )?;
     }
 
     debug!("Config: {:?}", config);
@@ -166,21 +119,6 @@ fn ensure_auth_key_pair(home_dir: &Path) -> Result<(PathBuf, PathBuf)> {
     }
 
     Ok((private_path, public_path))
-}
-
-/// replace_base_dir replaces the leading `/opt/confidential-containers/` in the path with a new base path.
-///
-/// This behavior is a compromise to set the base directory at runtime and workaround the hardcoded paths all around the codebase.
-/// replace_base_dir will become obsolete when it's possible to set the base directory at runtime project-wide.
-fn replace_base_dir(path: &Path, new_base: &Path) -> PathBuf {
-    let old_base = "/opt/confidential-containers/";
-    if let Ok(suffix) = path.strip_prefix(old_base) {
-        new_base.join(suffix)
-    } else if path.starts_with("/") {
-        path.to_path_buf()
-    } else {
-        new_base.join(path)
-    }
 }
 
 /// Ensure a key pair for HTTPS exists in the given home directory.

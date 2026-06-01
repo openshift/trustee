@@ -27,6 +27,9 @@ coco-as-grpc = ["coco-as", "mobc", "tonic", "tonic-prost", "prost"]
 # Use Intel TA as backend attestation service
 intel-trust-authority-as = ["as", "az-cvm-vtpm"]
 
+# Support external gRPC plugins
+external-plugin = ["tonic", "tonic-prost", "prost", "backon", "rustls"]
+
 # Use aliyun KMS as KBS backend
 aliyun = ["kms/aliyun"]
 
@@ -45,33 +48,35 @@ actix = "0.13.5"
 actix-web = { workspace = true, features = ["openssl"] }
 actix-web-httpauth.workspace = true
 aes-gcm = "0.10.1"
-aes-kw = "0.2.1"
+aes-kw = "0.3.0"
 anyhow.workspace = true
 async-trait.workspace = true
+backon = { version = "1.6", optional = true }
 base64.workspace = true
 cfg-if.workspace = true
 clap = { workspace = true, features = ["derive", "env"] }
 config.workspace = true
-concat-kdf = "0.1.0"
 cryptoki = { version = "0.12.0", optional = true }
 educe.workspace = true
 hex.workspace = true
 jsonwebtoken = { workspace = true, default-features = false }
 kbs-types.workspace = true
+key-value-storage.path = "../deps/key-value-storage"
 kms = { workspace = true, default-features = false }
-lazy_static.workspace = true
-mobc = { version = "0.9.0", optional = true }
+mobc = { workspace = true, optional = true }
 p256 = { workspace = true, features = ["ecdh"] }
 p521 = { workspace = true, features = ["ecdh"] }
+policy-engine.path = "../deps/policy-engine"
 prometheus = "0.14.0"
 prost = { workspace = true, optional = true }
-rand.workspace = true
-regex = "1.12.2"
+regex = "1.12.3"
 regorus.workspace = true
 reqwest = { workspace = true, features = ["json"] }
 rsa.workspace = true
-scc = "2"
-semver = "1.0.16"
+rustls = { version = "0.23", default-features = false, features = [
+    "ring",
+], optional = true }
+semver = "1.0.28"
 serde = { workspace = true, features = ["derive"] }
 serde_json.workspace = true
 serde_with.workspace = true
@@ -80,7 +85,7 @@ shadow-rs.workspace = true
 strum.workspace = true
 tempfile.workspace = true
 thiserror.workspace = true
-time.workspace = true
+time = { workspace = true, features = ["serde"] }
 tokio.workspace = true
 tonic = { workspace = true, optional = true }
 tonic-prost = { workspace = true, optional = true }
@@ -89,7 +94,7 @@ tracing-subscriber.workspace = true
 uuid = { workspace = true, features = ["serde"] }
 openssl.workspace = true
 az-cvm-vtpm = { version = "0.8.0", default-features = false, optional = true }
-vaultrs = { version = "0.7.4", optional = true }
+vaultrs = { version = "0.8.0", optional = true }
 
 [target.'cfg(not(any(target_arch = "s390x", target_arch = "aarch64")))'.dependencies]
 attestation-service = { path = "../attestation-service", default-features = false, features = [
@@ -116,6 +121,11 @@ rstest.workspace = true
 reference-value-provider-service.path = "../rvps"
 serial_test.workspace = true
 toml.workspace = true
+
+[[bin]]
+name = "external_plugin_test_server"
+path = "test/external_plugin_test_server.rs"
+required-features = ["external-plugin"]
 
 [build-dependencies]
 tonic-prost-build.workspace = true

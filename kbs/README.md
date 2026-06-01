@@ -4,7 +4,7 @@ The Confidential Containers Key Broker Service (KBS) facilitates remote attestat
 The KBS is an implementation of a [Relying Party](https://www.ietf.org/archive/id/draft-ietf-rats-architecture-22.html).
 The KBS itself does not validate attestation evidence. Instead, it supports different external components to verify TEE evidence in the form of plug-ins, including
 - [CoCo Attestation-Service (CoCo AS)](../attestation-service/) ([All plugins](../attestation-service/README.md#attestation-service) supported)
-- [Intel Trust Authority (ITA)](src/attestation/intel_trust_authority/) (Only supports SGX/TDX)
+- [Intel Trust Authority (ITA)](src/attestation/intel_trust_authority/) (Supports SGX/TDX/NVIDIA GPUs)
 
 # Quick Start
 
@@ -98,6 +98,36 @@ The parameters
 - `AS_TYPES`: The KBS supports multiple backend attestation services. `AS_TYPES` selects which verifier to use. The options are `coco-as` and `intel-trust-authority-as`.
 - `COCO_AS_INTEGRATION_TYPE`:  The KBS can connect to the CoCo AS in multiple ways. `COCO_AS_INTEGRATION_TYPE` can be set either to `grpc` or `builtin`. With `grpc` the KBS will make a remote connection to the AS. If you are manually building and configuring the components, you'll need to set them up so that this connection can be established. Similar to passport mode, the remote AS can be useful if secret provisioning and attestation verification are not in the same scope. With `builtin` the KBA uses the AS as a crate. This is recommended if you want to avoid the complexity of a remote connection.
 - `ALIYUN`: The kbs support aliyun KMS as secret storage backend. `true` to enable building this feature. By default it is `false`.
+
+## External Plugins
+
+KBS supports external plugins written in any language with gRPC support.
+External plugins run as independent services and communicate with KBS over
+gRPC, coexisting with compiled-in Rust plugins.
+
+### Building with External Plugin Support
+
+```shell
+EXTERNAL_PLUGIN=true make
+```
+
+### Plugin Configuration
+
+External plugins are registered in the KBS TOML config under a single `external` plugin entry. Each backend is an inline table in the `backends` array:
+
+```toml
+[[plugins]]
+name = "external"
+backends = [
+  { name = "my-plugin", endpoint = "http://127.0.0.1:50051", tls_mode = "insecure" },
+  { name = "other-plugin", endpoint = "https://127.0.0.1:50052", tls_mode = "tls", ca_cert_path = "/etc/kbs/ca.pem" },
+]
+```
+
+Plugins are reached at `/kbs/v0/external/<name>/...`.
+
+See [`docs/ext_plugin.md`](docs/ext_plugin.md) for additional details
+
 ## HTTPS Support
 
 The KBS can use HTTPS. This is facilitated by openssl crypto backend.

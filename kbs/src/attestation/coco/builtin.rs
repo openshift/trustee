@@ -5,13 +5,54 @@
 use anyhow::*;
 use async_trait::async_trait;
 use attestation_service::{
-    config::Config as AsConfig, AttestationService, HashAlgorithm, InitDataInput, RuntimeData,
-    VerificationRequest,
+    config::VerifierConfig, ear_token::EarTokenConfiguration, rvps::RvpsConfig, AttestationService,
+    HashAlgorithm, InitDataInput, RuntimeData, VerificationRequest,
 };
 use kbs_types::{Challenge, Tee};
+use key_value_storage::{KeyValueStorageType, StorageBackendConfig};
+use serde::Deserialize;
 use tokio::sync::RwLock;
 
 use crate::attestation::backend::{make_nonce, Attest, IndependentEvidence};
+
+#[derive(Clone, Debug, Deserialize, PartialEq, Default)]
+pub struct Config {
+    /// Configurations for RVPS.
+    #[serde(default)]
+    pub rvps_config: RvpsConfig,
+
+    /// The Attestation Result Token Broker Config
+    #[serde(default)]
+    pub attestation_token_broker: EarTokenConfiguration,
+
+    /// Optional configuration for verifier modules
+    #[serde(default)]
+    pub verifier_config: Option<VerifierConfig>,
+
+    /// Optional storage backend configuration for CoCo AS.
+    /// If provided, overrides the unified storage_backend for CoCo AS storage.
+    /// If None, falls back to the unified storage_backend.
+    #[serde(default)]
+    pub storage_type: Option<KeyValueStorageType>,
+}
+
+impl Config {
+    pub fn derive_as_config(
+        &self,
+        storage_backend_config: &StorageBackendConfig,
+    ) -> attestation_service::config::Config {
+        let mut storage_backend = storage_backend_config.clone();
+        if let Some(storage_type) = self.storage_type {
+            storage_backend.storage_type = storage_type;
+        }
+        attestation_service::config::Config {
+            rvps_config: self.rvps_config.clone(),
+            attestation_token_broker: self.attestation_token_broker.clone(),
+            verifier_config: self.verifier_config.clone(),
+            storage_backend,
+        }
+    }
+}
 
 pub struct BuiltInCoCoAs {
     inner: RwLock<AttestationService>,
@@ -103,7 +144,11 @@ impl Attest for BuiltInCoCoAs {
 }
 
 impl BuiltInCoCoAs {
-    pub async fn new(config: AsConfig) -> Result<Self> {
+    pub async fn new(
+        config: Config,
+        storage_backend_config: &StorageBackendConfig,
+    ) -> Result<Self> {
+        let config = config.derive_as_config(storage_backend_config);
         let inner = RwLock::new(AttestationService::new(config).await?);
         Ok(Self { inner })
     }

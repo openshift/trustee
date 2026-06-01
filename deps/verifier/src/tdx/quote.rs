@@ -1,4 +1,4 @@
-use anyhow::{anyhow, bail, Result};
+use anyhow::{anyhow, bail, Context, Result};
 use core::fmt;
 use scroll::Pread;
 
@@ -42,6 +42,38 @@ impl fmt::Display for QuoteHeader {
             hex::encode(self.user_data)
         )
     }
+}
+
+#[repr(C)]
+#[derive(Debug, Pread)]
+struct QuoteSignature {
+    sig_r: [u8; 32],
+    sig_s: [u8; 32],
+    pkey_x_coord: [u8; 32],
+    pkey_y_coord: [u8; 32],
+}
+
+#[repr(C)]
+#[derive(Debug, Pread)]
+struct QeReport {
+    report: [u8; 384],
+    sig_r: [u8; 32],
+    sig_s: [u8; 32],
+}
+
+#[repr(C)]
+#[derive(Debug)]
+pub(crate) struct QeCertificationData {
+    qe_report: QeReport,
+    qe_authentication: Vec<u8>,
+    pub(crate) certificates: Vec<u8>,
+}
+
+#[repr(C)]
+#[derive(Debug)]
+pub(crate) struct QuoteCertificationData {
+    quote_signature: QuoteSignature,
+    pub(crate) qe_certification_data: QeCertificationData,
 }
 
 /// SGX Report2 body
@@ -325,6 +357,106 @@ impl fmt::Display for Quote {
     }
 }
 
+const QE_REPORT_CERT_DATA_TYPE: u16 = 6;
+const PCK_CERT_CHAIN_CERT_DATA_TYPE: u16 = 5;
+
+/// Quote Certification Data includes
+/// - ECDSA 256-bit Quote Signature Data Structure – Version 4
+/// - Quoting Enclave Report Certification Data
+fn parse_certification_data_v4(data: &[u8]) -> Result<QuoteCertificationData> {
+    let mut offset = 0;
+
+    let quote_signature: QuoteSignature = data.gread::<QuoteSignature>(&mut offset)?;
+
+    let qe_report_cert_data_type: u16 = data.gread::<u16>(&mut offset)?;
+
+    // Expect QE Report Certification Data
+    if qe_report_cert_data_type != QE_REPORT_CERT_DATA_TYPE {
+        bail!("expected cert data type {QE_REPORT_CERT_DATA_TYPE}, got {qe_report_cert_data_type}");
+    }
+
+    // Skip length for now
+    _ = data.gread::<u32>(&mut offset)?;
+
+    let qe_report: QeReport = data.gread(&mut offset)?;
+
+    let qe_auth_len: usize = data.gread::<u16>(&mut offset)? as usize;
+    let qe_authentication: Vec<u8> = data
+        .get(offset..offset + qe_auth_len)
+        .ok_or_else(|| anyhow!("QE authentication data out of bounds"))?
+        .to_vec();
+
+    offset += qe_auth_len;
+    let pck_cert_chain_type: u16 = data.gread::<u16>(&mut offset)?;
+
+    // Expect PCK Cert Chain type
+    if pck_cert_chain_type != PCK_CERT_CHAIN_CERT_DATA_TYPE {
+        bail!(
+            "expected cert chain type {PCK_CERT_CHAIN_CERT_DATA_TYPE}, got {pck_cert_chain_type}"
+        );
+    }
+
+    let cert_len: usize = data.gread::<u32>(&mut offset)? as usize;
+    let certificates = data
+        .get(offset..offset + cert_len)
+        .ok_or_else(|| anyhow!("PCK certificate chain data out of bounds"))?
+        .to_vec();
+
+    Ok(QuoteCertificationData {
+        quote_signature,
+        qe_certification_data: QeCertificationData {
+            qe_report,
+            qe_authentication,
+            certificates,
+        },
+    })
+}
+
+pub(crate) fn cert_data_start(q: &Quote) -> usize {
+    match q {
+        Quote::V4 { .. } => std::mem::size_of::<QuoteHeader>() + std::mem::size_of::<ReportBody2>(),
+        Quote::V5 { r#type, .. } => match r#type {
+            QuoteV5Type::TDX10 => {
+                std::mem::size_of::<QuoteHeader>()
+                    + std::mem::size_of::<QuoteV5Type>()
+                    + std::mem::size_of::<[u8; 4]>()
+                    + std::mem::size_of::<ReportBody2>()
+            }
+            QuoteV5Type::TDX15 => {
+                std::mem::size_of::<QuoteHeader>()
+                    + std::mem::size_of::<QuoteV5Type>()
+                    + std::mem::size_of::<[u8; 4]>()
+                    + std::mem::size_of::<ReportBody2v15>()
+            }
+        },
+    }
+}
+
+/// Parse the signature section of a quote, returning the full QuoteCertificationData.
+pub(crate) fn parse_tdx_quote_certification(
+    quote_bin: &[u8],
+    quote: &Quote,
+) -> Result<QuoteCertificationData> {
+    let len_off = cert_data_start(quote);
+    let sig_start = len_off + std::mem::size_of::<u32>();
+
+    let sig_len: [u8; 4] = quote_bin
+        .get(len_off..sig_start)
+        .context("quote too short to read signature data length")?
+        .try_into()
+        .context("signature data length slice is not 4 bytes")?;
+
+    let sig_len = u32::from_le_bytes(sig_len) as usize;
+
+    let sig_data = quote_bin
+        .get(sig_start..sig_start + sig_len)
+        .context(format!(
+            "quote too short for declared signature data length ({sig_len})"
+        ))?;
+
+    parse_certification_data_v4(sig_data)
+}
+
 pub fn parse_tdx_quote(quote_bin: &[u8]) -> Result<Quote> {
     let quote_header = &quote_bin[..QUOTE_HEADER_SIZE];
     let header = quote_header
@@ -420,7 +552,7 @@ mod tests {
     /// Also, you need to configure DCAP to work with alibaba cloud's PCCS.
     /// create `/tmp/sgx_test_qcnl.conf` with content
     /// ```json
-    /// {"pccs_url" :"https://sgx-dcap-server.cn-beijing.aliyuncs.com/sgx/certification/v4/"}
+    /// {"collateral_service" :"https://sgx-dcap-server.cn-beijing.aliyuncs.com/sgx/certification/v4/"}
     /// ```
     /// Test can be run using exported environment variable:
     /// ```QCNL_CONF_PATH=/tmp/sgx_test_qcnl.conf```

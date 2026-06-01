@@ -5,7 +5,9 @@
 
 use std::sync::Arc;
 
+use key_value_storage::{KeyValueStorageStructConfig, KeyValueStorageType};
 pub use reference_value_provider_service::config::Config as RvpsCrateConfig;
+use reference_value_provider_service::extractors::ExtractorsConfig;
 use serde::Deserialize;
 use serde_json::Value;
 use thiserror::Error;
@@ -30,6 +32,10 @@ pub enum RvpsError {
     #[error("tonic transport error: {0}")]
     TonicTransport(#[from] tonic::transport::Error),
 
+    #[cfg(feature = "rvps-grpc")]
+    #[error("gRPC pool error: {0}")]
+    GrpcPool(#[from] mobc::Error<anyhow::Error>),
+
     #[error(transparent)]
     Anyhow(#[from] anyhow::Error),
 }
@@ -52,25 +58,50 @@ pub trait RvpsApi {
 #[derive(Deserialize, Clone, Debug, PartialEq)]
 #[serde(tag = "type")]
 pub enum RvpsConfig {
-    BuiltIn(RvpsCrateConfig),
+    BuiltIn {
+        extractors: Option<ExtractorsConfig>,
+
+        /// Optional storage backend configuration for RVPS.
+        /// If provided, overrides the unified storage_backend for RVPS storage.
+        /// If None, falls back to the unified storage_backend.
+        #[serde(default)]
+        storage_type: Option<KeyValueStorageType>,
+    },
     #[cfg(feature = "rvps-grpc")]
     GrpcRemote(grpc::RvpsRemoteConfig),
 }
 
 impl Default for RvpsConfig {
     fn default() -> Self {
-        Self::BuiltIn(RvpsCrateConfig::default())
+        Self::BuiltIn {
+            extractors: None,
+            storage_type: None,
+        }
     }
 }
 
 pub type RvpsClient = Arc<Mutex<dyn RvpsApi + Send + Sync>>;
 
 #[instrument(skip_all, name = "Initialize RVPS")]
-pub async fn initialize_rvps_client(config: &RvpsConfig) -> Result<RvpsClient> {
+pub async fn initialize_rvps_client(
+    config: &RvpsConfig,
+    unified_storage_type: KeyValueStorageType,
+    storage_config: &KeyValueStorageStructConfig,
+) -> Result<RvpsClient> {
     match config {
-        RvpsConfig::BuiltIn(config) => {
+        RvpsConfig::BuiltIn {
+            extractors,
+            storage_type,
+        } => {
             info!("launch a built-in RVPS.");
-            Ok(Arc::new(Mutex::new(builtin::BuiltinRvps::new(config.clone())?)) as RvpsClient)
+
+            // Use RVPS-specific storage if provided, otherwise fall back to defaults
+            let actual_storage_type = storage_type.unwrap_or(unified_storage_type);
+
+            Ok(Arc::new(Mutex::new(
+                builtin::BuiltinRvps::new(extractors.clone(), actual_storage_type, storage_config)
+                    .await?,
+            )) as RvpsClient)
         }
         #[cfg(feature = "rvps-grpc")]
         RvpsConfig::GrpcRemote(config) => {

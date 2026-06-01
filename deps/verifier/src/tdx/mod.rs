@@ -9,7 +9,7 @@ use super::*;
 use crate::intel_dcap::{ecdsa_quote_verification, extend_using_custom_claims};
 use async_trait::async_trait;
 use base64::Engine;
-use quote::parse_tdx_quote;
+use quote::{parse_tdx_quote, parse_tdx_quote_certification};
 use serde::{Deserialize, Serialize};
 
 pub(crate) mod claims;
@@ -127,7 +127,11 @@ async fn verify_evidence(
         }
     }
     // Return Evidence parsed claim
-    let mut claim = generate_parsed_claim(quote, ccel_option)?;
+    let pck_certs = parse_tdx_quote_certification(&quote_bin, &quote)?
+        .qe_certification_data
+        .certificates;
+
+    let mut claim = generate_parsed_claim(quote, ccel_option, Some(&pck_certs))?;
     extend_using_custom_claims(&mut claim, custom_claims)?;
 
     Ok(claim)
@@ -147,7 +151,7 @@ mod tests {
         let quote_bin = fs::read("./test_data/tdx_quote_4.dat").unwrap();
         let quote = parse_tdx_quote(&quote_bin).unwrap();
 
-        let parsed_claim = generate_parsed_claim(quote, Some(ccel));
+        let parsed_claim = generate_parsed_claim(quote, Some(ccel), None);
         assert!(parsed_claim.is_ok());
 
         let _ = fs::write(

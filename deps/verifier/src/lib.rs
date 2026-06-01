@@ -44,7 +44,7 @@ pub mod nvidia;
     feature = "tdx-verifier",
     feature = "sgx-verifier"
 ))]
-pub mod intel_dcap;
+pub(crate) mod intel_dcap;
 
 #[cfg(feature = "tpm-verifier")]
 pub mod tpm;
@@ -55,7 +55,7 @@ pub struct VerifierConfig {
     nvidia_verifier: Option<nvidia::NvidiaVerifierConfig>,
 
     #[cfg(feature = "tpm-verifier")]
-    tpm_verifier: Option<tpm::config::TpmVerifierConfig>,
+    tpm_verifier: Option<tpm::TpmVerifierConfig>,
 
     #[cfg(feature = "snp-verifier")]
     snp_verifier: Option<snp::SnpVerifierConfig>,
@@ -73,7 +73,6 @@ pub async fn to_verifier(
     _config: Option<VerifierConfig>,
 ) -> Result<Box<dyn Verifier + Send + Sync>> {
     match tee {
-        Tee::Sev => todo!(),
         Tee::AzSnpVtpm => {
             cfg_if::cfg_if! {
                 if #[cfg(feature = "az-snp-vtpm-verifier")] {
@@ -185,8 +184,7 @@ pub async fn to_verifier(
         Tee::Tpm => {
             cfg_if::cfg_if! {
                 if #[cfg(feature = "tpm-verifier")] {
-                    let tpm_config = _config.map(|c| c.tpm_verifier).unwrap_or(None);
-                    Ok(Box::new(tpm::TpmVerifier::new(tpm_config)?) as Box<dyn Verifier + Send + Sync>)
+                    Ok(Box::<tpm::TpmVerifier>::default() as Box<dyn Verifier + Send + Sync>)
                 } else {
                     bail!("feature `tpm-verifier` is not enabled for `verifier` crate.")
                 }
@@ -207,6 +205,20 @@ pub enum ReportData<'a> {
 pub enum InitDataHash<'a> {
     Value(&'a [u8]),
     NotProvided,
+}
+
+/// Trait for converting types to hex strings
+pub trait ToHex {
+    fn to_hex(&self) -> String;
+}
+
+impl ToHex for ReportData<'_> {
+    fn to_hex(&self) -> String {
+        match self {
+            ReportData::Value(bytes) => hex::encode(bytes),
+            ReportData::NotProvided => String::new(),
+        }
+    }
 }
 
 #[async_trait]

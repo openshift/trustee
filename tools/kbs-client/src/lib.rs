@@ -15,6 +15,7 @@ use kbs_protocol::KbsClientCapabilities;
 use serde::Serialize;
 use serde_json::json;
 use std::time::{SystemTime, UNIX_EPOCH};
+use tracing::warn;
 
 const KBS_URL_PREFIX: &str = "kbs/v0";
 const ADMIN_TOKEN_EXPIRY_SECS: u64 = 7200;
@@ -155,7 +156,7 @@ pub struct SetPolicyInput {
 /// - auth_key: KBS owner's authenticate private key (PEM string).
 /// - policy_bytes: Policy file content in `Vec<u8>`.
 /// - [policy_type]: Policy type. Default value is "rego".
-/// - [policy_id]: Policy ID. Default value is "default".
+/// - [policy_id]: Policy ID. Default value is "default_cpu".
 /// - kbs_root_certs_pem: Custom HTTPS root certificate of KBS server. It can be left blank.
 pub async fn set_attestation_policy(
     url: &str,
@@ -170,9 +171,16 @@ pub async fn set_attestation_policy(
     let http_client = build_http_client(kbs_root_certs_pem)?;
 
     let set_policy_url = format!("{}/{KBS_URL_PREFIX}/attestation-policy", url);
+    let policy_id = match policy_id {
+        Some(policy_id) => policy_id,
+        None => {
+            warn!("no policy_id set; using default_cpu");
+            "default_cpu".to_string()
+        }
+    };
     let post_input = SetPolicyInput {
         r#type: policy_type.unwrap_or("rego".to_string()),
-        policy_id: policy_id.unwrap_or("default".to_string()),
+        policy_id,
         policy: URL_SAFE_NO_PAD.encode(policy_bytes.clone()),
     };
 
@@ -256,6 +264,36 @@ pub async fn set_resource(
         .header("Content-Type", "application/octet-stream")
         .bearer_auth(token)
         .body(resource_bytes.clone())
+        .send()
+        .await?;
+    match res.status() {
+        reqwest::StatusCode::OK => Ok(()),
+        _ => {
+            bail!("Request Failed, Response: {:?}", res.text().await?)
+        }
+    }
+}
+
+/// Delete a secret resource from KBS.
+/// Input parameters:
+/// - url: KBS server root URL.
+/// - auth_key: KBS owner's authenticate private key (PEM string).
+/// - path: Resource path, format must be `<top>/<middle>/<tail>`, e.g. `alice/key/example`.
+/// - kbs_root_certs_pem: Custom HTTPS root certificate of KBS server. It can be left blank.
+pub async fn delete_resource(
+    url: &str,
+    auth_key: String,
+    path: &str,
+    kbs_root_certs_pem: Vec<String>,
+) -> Result<()> {
+    let token = sign_admin_token(&auth_key)?;
+
+    let http_client = build_http_client(kbs_root_certs_pem)?;
+
+    let resource_url = format!("{}/{KBS_URL_PREFIX}/resource/{}", url, path);
+    let res = http_client
+        .delete(resource_url)
+        .bearer_auth(token)
         .send()
         .await?;
     match res.status() {

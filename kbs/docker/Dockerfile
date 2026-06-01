@@ -4,6 +4,8 @@ FROM --platform=${BUILDPLATFORM:-linux/amd64} \
     AS builder
 ARG ARCH=x86_64
 ARG ALIYUN=false
+ARG VAULT=true
+ARG EXTERNAL_PLUGIN=false
 
 ENV DEBIAN_FRONTEND=noninteractive
 
@@ -17,7 +19,7 @@ RUN apt-get update && \
 
 RUN if [ "${ARCH}" = "aarch64" ]; then apt-get install -y libc-bin; fi
 
-ARG DCAP_VERSION=1_24_100
+ARG DCAP_VERSION=1_25_100
 RUN if [ "${ARCH}" = "x86_64" ]; then curl -fsSL https://download.01.org/intel-sgx/sgx_repo/ubuntu/intel-sgx-deb.key | \
     gpg --dearmor --output /usr/share/keyrings/intel-sgx.gpg && \
     curl -sSLf https://download.01.org/intel-sgx/sgx_repo/ubuntu/apt_preference_files/99dcap_${DCAP_VERSION}_noble_custom_version.cfg | \
@@ -44,7 +46,7 @@ RUN if [ "${ARCH}" = "x86_64" ]; then curl -fsSL https://download.01.org/intel-s
 WORKDIR /usr/src/trustee
 COPY . .
 
-RUN cd kbs && make AS_FEATURE=coco-as-builtin FEATURES=pkcs11 ALIYUN=${ALIYUN} ARCH=${ARCH} && \
+RUN cd kbs && make AS_FEATURE=coco-as-builtin FEATURES=pkcs11 ALIYUN=${ALIYUN} ARCH=${ARCH} VAULT=${VAULT} EXTERNAL_PLUGIN=${EXTERNAL_PLUGIN} && \
     make ARCH=${ARCH} install-kbs
 
 # ubuntu:24.04
@@ -53,7 +55,7 @@ ARG ARCH=x86_64
 
 WORKDIR /tmp
 
-ARG DCAP_VERSION=1_24_100
+ARG DCAP_VERSION=1_25_100
 RUN apt-get update && \
     apt-get install -y \
     curl \
