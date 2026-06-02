@@ -90,10 +90,10 @@ pub(super) fn describe_error(error: quote3_error_t) -> String {
         quote3_error_t::SGX_QL_TCB_NOT_SUPPORTED => "Current TCB level cannot be found in platform/enclave TCB info.",
         quote3_error_t::SGX_QL_CONFIG_INVALID_JSON => "The QPL's config file is in JSON format but has a format error.",
         quote3_error_t::SGX_QL_RESULT_INVALID_SIGNATURE => "Invalid signature during quote verification.",
-        quote3_error_t::SGX_QL_QAEIDENTITY_MISMATCH => "QaE Identity is not match to Intel signed QaE identity.",
-        quote3_error_t::SGX_QL_QAE_OUT_OF_DATE => "QaE ISVSVN is smaller than the ISVSVN threshold, or input QaE ISVSVN is too small.",
-        quote3_error_t::SGX_QL_QUOTE_HASH_MISMATCH => "Quote hash in the appraisal result is not derived from the input quote.",
-        quote3_error_t::SGX_QL_REPORT_DATA_MISMATCH => "Report data mismatch during qae report and identity verify.",
+        quote3_error_t::SGX_QL_QEIDENTITY_MISMATCH => "QaE Identity is not match to Intel signed QaE identity.",
+        quote3_error_t::SGX_QL_QVE_OUT_OF_DATE => "QaE ISVSVN is smaller than the ISVSVN threshold, or input QaE ISVSVN is too small.",
+        quote3_error_t::TEE_QEIDENTITY_MISMATCH => "Quote hash in the appraisal result is not derived from the input quote.",
+        quote3_error_t::TEE_QVE_OUT_OF_DATE => "Report data mismatch during qae report and identity verify.",
         _ => "Unrecognized DCAP error code.",
     };
 
