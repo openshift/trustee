@@ -8630,11 +8630,6 @@ dependencies = [
 ]
 
 [[patch.unused]]
-name = "ear"
-version = "0.4.0"
-source = "git+https://github.com/veraison/rust-ear.git?rev=3d5fa46#3d5fa4680865f363737b346a8722b01470016616"
-
-[[patch.unused]]
 name = "nvml-wrapper"
 version = "0.11.0"
 source = "git+https://github.com/rust-nvml/nvml-wrapper?rev=7e0752f331#7e0752f331d37a62a46ef2fb6329a33fae36dd8d"
