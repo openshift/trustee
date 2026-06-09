@@ -11,8 +11,8 @@ all-verifier = [
     "snp-verifier",
     "az-snp-vtpm-verifier",
     "az-tdx-vtpm-verifier",
-    "csv-verifier",
-    "hygon-dcu-verifier",
+    # "csv-verifier",  # Temporarily disabled due to OpenSSL compatibility issues with csv-rs
+    # "hygon-dcu-verifier",  # Temporarily disabled due to OpenSSL compatibility issues with csv-rs
     "cca-verifier",
     "se-verifier",
     "nvidia-verifier",
