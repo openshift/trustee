@@ -4,18 +4,18 @@ RELEASE := $(shell lsb_release -sr)
 CODENAME := $(shell lsb_release -sc)
 SGX_REPO_URL := https://download.01.org/intel-sgx/sgx_repo/ubuntu
 KBS_CONFIG_PATH := ./config
-QCNL_CONF_PATH := $(shell mktemp --suffix=.kbs-qcnl.conf)
 MAKEFILE_DIR := $(shell dirname $(abspath $(lastword $(MAKEFILE_LIST))))
 PROJECT_DIR := $(MAKEFILE_DIR)/..
 BOLD := $(shell tput bold)
 SGR0 := $(shell tput sgr0)
 TEE ?= sample
 WORK_DIR := $(MAKEFILE_DIR)/work
-KBS_REPO_PATH := $(WORK_DIR)/repository
+KBS_REPO_PATH := $(WORK_DIR)/storage/repository
 ATTESTATION_TOKEN := $(WORK_DIR)/attestation_token
 ROUNDTRIP_FILE := $(WORK_DIR)/secret
 REPOSITORY_SECRET := one/two/three
-SECRET_FILE := $(KBS_REPO_PATH)/$(REPOSITORY_SECRET)
+SECRET_FILE_NAME := $(subst /,\\x2F,$(REPOSITORY_SECRET))
+SECRET_FILE := $(KBS_REPO_PATH)/$(SECRET_FILE_NAME)
 
 # match those with the entries in the config/*.toml files
 CA_KEY := $(WORK_DIR)/ca.key
@@ -27,10 +27,26 @@ TOKEN_CERT := $(WORK_DIR)/token-cert.pem
 TOKEN_CERT_CHAIN := $(WORK_DIR)/token-cert-chain.pem
 KBS_KEY := $(WORK_DIR)/kbs.key
 KBS_PEM := $(WORK_DIR)/kbs.pem
+ADMIN_TOKEN := $(WORK_DIR)/admin-token
 TEE_KEY := $(WORK_DIR)/tee.key
 HTTPS_KEY := $(WORK_DIR)/https.key
 HTTPS_CERT := $(WORK_DIR)/https.crt
 KBS_POLICY := $(WORK_DIR)/kbs-policy.rego
+EXT_PLUGIN_ATTEST_POLICY := $(WORK_DIR)/ext-plugin-attest-policy.rego
+PLUGIN_ATTESTATION_TOKEN := $(WORK_DIR)/plugin-attestation-token
+
+# External plugin test certificates (shared by echo-TLS and resource-TLS tests)
+ECHO_PLUGIN_CA_KEY := $(WORK_DIR)/echo-plugin-ca.key
+ECHO_PLUGIN_CA_CERT := $(WORK_DIR)/echo-plugin-ca.pem
+ECHO_PLUGIN_SERVER_KEY := $(WORK_DIR)/echo-plugin-server.key
+ECHO_PLUGIN_SERVER_CERT := $(WORK_DIR)/echo-plugin-server.pem
+
+# Resource plugin test data
+EXT_RESOURCE_SECRET := $(WORK_DIR)/ext-resource-secret
+EXT_RESOURCE_ROUNDTRIP := $(WORK_DIR)/ext-resource-roundtrip
+EXT_RESOURCE_POLICY := $(WORK_DIR)/ext-resource-policy.rego
+EXT_RESOURCE_TLS_ROUNDTRIP := $(WORK_DIR)/ext-resource-tls-roundtrip
+EXT_STORE_PATH := one/two/three
 
 TEST_FEATURES ?=
 TEST_ARGUMENTS ?=
@@ -55,8 +71,34 @@ allow if {
 endef
 export TEE_POLICY_REGO
 
+define EXT_PLUGIN_POLICY_REGO
+package policy
+
+default allow = false
+
+allow if {
+	data.plugin == "external"
+	data["resource-path"][0] == "echo-test"
+	input["submods"]["cpu0"]["ear.veraison.annotated-evidence"]["$(TEE)"]
+}
+endef
+export EXT_PLUGIN_POLICY_REGO
+
+define EXT_RESOURCE_PLUGIN_POLICY_REGO
+package policy
+
+default allow = false
+
+allow if {
+	data.plugin == "external"
+	data["resource-path"][0] == "resource"
+	input["submods"]["cpu0"]["ear.veraison.annotated-evidence"]["$(TEE)"]
+}
+endef
+export EXT_RESOURCE_PLUGIN_POLICY_REGO
+
 ifneq ($(TEST_FEATURES),)
-  TEST_ARGUMENTS = --no-default-features --features $(TEST_FEATURES)
+  TEST_ARGUMENTS = --features $(TEST_FEATURES)
 endif
 
 .PHONY: install-dev-dependencies
@@ -81,7 +123,6 @@ install-dependencies:
 		| sudo tee /etc/apt/sources.list.d/intel-sgx.list && \
 	sudo apt-get update && \
 	sudo apt-get install -y \
-		libsgx-dcap-default-qpl \
 		libsgx-dcap-quote-verify \
 		libsgx-urts \
 		libtss2-esys-3.0.2-0 \
@@ -102,6 +143,22 @@ client:
 	cd $(PROJECT_DIR) && \
 	cargo build -p kbs-client --release $(TEST_ARGUMENTS) && \
 	install -D --compare $(PROJECT_DIR)/../target/release/kbs-client $(CURDIR)/client
+
+# Build external plugin echo test server
+echo-plugin:
+	cd $(PROJECT_DIR) && \
+	cargo build --release --bin external_plugin_test_server --features external-plugin && \
+	install -D --compare $(PROJECT_DIR)/../target/release/external_plugin_test_server $(CURDIR)/echo-plugin
+
+# Build KBS with external-plugin feature
+ext-plugin-kbs:
+	cd $(PROJECT_DIR) && \
+	make background-check-kbs EXTERNAL_PLUGIN=true && \
+	install -D --compare $(PROJECT_DIR)/../target/release/kbs $(CURDIR)/ext-plugin-kbs
+
+# Build resource plugin test server (same binary as echo-plugin, different env vars at runtime)
+plugin-resource: echo-plugin
+	install -D --compare $(CURDIR)/echo-plugin $(CURDIR)/plugin-resource
 
 .PHONY: bins
 bins: kbs resource-kbs client
@@ -141,6 +198,23 @@ $(KBS_KEY):
 
 $(KBS_PEM): $(KBS_KEY)
 	openssl pkey -in "$(KBS_KEY)" -pubout -out "$(KBS_PEM)"
+
+$(ADMIN_TOKEN): $(KBS_KEY)
+	@{ \
+		set -e; \
+		b64url() { openssl base64 -A | tr '+/' '-_' | tr -d '='; }; \
+		header='{"alg":"EdDSA","typ":"JWT"}'; \
+		iat=$$(date +%s); \
+		exp=$$((iat + 315360000)); \
+		payload="{\"iss\":\"issuer\",\"role\":\"admin\",\"aud\":[\"kbs\"],\"iat\":$${iat},\"exp\":$${exp}}"; \
+		h64=$$(printf '%s' "$$header" | b64url); \
+		p64=$$(printf '%s' "$$payload" | b64url); \
+		msg_file=$$(mktemp); \
+		printf '%s' "$${h64}.$${p64}" > "$$msg_file"; \
+		sig=$$(openssl pkeyutl -sign -inkey "$(KBS_KEY)" -rawin -in "$$msg_file" | b64url); \
+		rm -f "$$msg_file"; \
+		printf '%s.%s.%s\n' "$$h64" "$$p64" "$$sig" > "$(ADMIN_TOKEN)"; \
+	}
 
 $(TEE_KEY):
 	openssl genrsa -traditional -out "$(TEE_KEY)" 2048
@@ -185,12 +259,12 @@ stop-resource-kbs: resource-kbs.PID
 	@printf "${BOLD}stop resource-kbs${SGR0}\n"
 	kill $$(cat $<) && rm $<
 
-test-bgcheck: client start-kbs
+test-bgcheck: client $(ADMIN_TOKEN) start-kbs
 	./client \
 		--url https://127.0.0.1:8080 \
 		--cert-file "$(HTTPS_CERT)" \
 		config \
-		--auth-private-key "$(KBS_KEY)" \
+		--admin-token-file "$(ADMIN_TOKEN)" \
 		set-resource-policy \
 		--policy-file <(echo "$$TEE_POLICY_REGO") && \
 	./client \
@@ -211,9 +285,9 @@ $(ATTESTATION_TOKEN): client $(TEE_KEY) start-kbs
 		--tee-key-file "$(TEE_KEY)" \
 		> "$(ATTESTATION_TOKEN)"
 
-test-passport: client $(ATTESTATION_TOKEN) start-resource-kbs
+test-passport: client $(ADMIN_TOKEN) $(ATTESTATION_TOKEN) start-resource-kbs
 	./client --url http://127.0.0.1:50002 \
-		config --auth-private-key "$(KBS_KEY)" \
+		config --admin-token-file "$(ADMIN_TOKEN)" \
 		set-resource-policy --policy-file <(echo "$$TEE_POLICY_REGO") && \
 	./client --url http://127.0.0.1:50002 get-resource \
 		--attestation-token "$(ATTESTATION_TOKEN)" \
@@ -224,10 +298,13 @@ test-passport: client $(ATTESTATION_TOKEN) start-resource-kbs
 	@printf "${BOLD}passport e2e test passed${SGR0}\n"
 
 .PHONY: stop
-stop: stop-kbs stop-resource-kbs
+stop: stop-kbs stop-resource-kbs stop-ext-plugins
 
 .PHONY: e2e-test
 e2e-test: test-bgcheck test-passport stop
+
+# External plugin e2e targets are kept in a split include for maintainability.
+include make/plugin-e2e.mk
 
 # Vault configuration (using OpenBao, an open-source Vault-compatible server)
 OPENBAO_VERSION := 2.5.0
@@ -422,4 +499,7 @@ clean:  clean-tpm
 		client \
 		resource-kbs \
 		vault-kbs \
+		echo-plugin \
+		plugin-resource \
+		ext-plugin-kbs \
 		work/*

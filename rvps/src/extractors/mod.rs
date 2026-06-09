@@ -12,11 +12,9 @@ use tracing::warn;
 
 use super::{Message, ReferenceValue};
 
+pub mod corim;
 pub mod sample;
 pub mod swid;
-
-#[cfg(feature = "in-toto")]
-pub mod in_toto;
 
 /// Extractor is a standard interface that all provenance extractors
 /// need to implement. Here reference_value can be modified in the
@@ -53,11 +51,7 @@ impl Extractors {
             Box::new(swid::SwidExtractor::new(swid_config)?),
         );
 
-        #[cfg(feature = "in-toto")]
-        extractor_map.insert(
-            "in-toto".to_string(),
-            Box::new(in_toto::InTotoExtractor::new()),
-        );
+        extractor_map.insert("corim".to_string(), Box::new(corim::CorimExtractor));
 
         Ok(Extractors { extractor_map })
     }

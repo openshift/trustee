@@ -4,6 +4,7 @@ use std::sync::Arc;
 use tokio::sync::RwLock;
 use tonic::transport::Server;
 use tonic::{Request, Response, Status};
+use tonic_health::server::health_reporter;
 use tracing::{debug, info};
 
 use crate::{Config, Rvps};
@@ -76,11 +77,17 @@ impl ReferenceValueProviderService for RvpsServer {
 }
 
 pub async fn start(socket: SocketAddr, config: Config) -> Result<()> {
-    let service = Rvps::new(config)?;
+    let service = Rvps::new(config).await?;
     let inner = Arc::new(RwLock::new(service));
     let rvps_server = RvpsServer::new(inner.clone());
 
+    let (health_reporter, health_service) = health_reporter();
+    health_reporter
+        .set_serving::<ReferenceValueProviderServiceServer<RvpsServer>>()
+        .await;
+
     Server::builder()
+        .add_service(health_service)
         .add_service(ReferenceValueProviderServiceServer::new(rvps_server))
         .serve(socket)
         .await

@@ -1,7 +1,8 @@
 AS_TYPE ?= coco-as
 ALIYUN ?= false
 NEBULA_CA_PLUGIN ?= false
-VAULT ?= false
+VAULT ?= true
+EXTERNAL_PLUGIN ?= false
 
 BUILD_ARCH := $(shell uname -m)
 ARCH ?= $(shell uname -m)
@@ -49,15 +50,19 @@ else ifneq ($(AS_TYPE), )
 endif
 
 ifeq ($(ALIYUN), true)
-  FEATURES := $(FEATURES),aliyun
+  override FEATURES := $(FEATURES),aliyun
 endif
 
 ifeq ($(NEBULA_CA_PLUGIN), true)
-  FEATURES := $(FEATURES),nebula-ca-plugin
+  override FEATURES := $(FEATURES),nebula-ca-plugin
 endif
 
 ifeq ($(VAULT), true)
-  FEATURES := $(FEATURES),vault
+  override FEATURES := $(FEATURES),vault
+endif
+
+ifeq ($(EXTERNAL_PLUGIN), true)
+  override FEATURES := $(FEATURES),external-plugin
 endif
 
 ifeq ($(CLI_FEATURES),sample_only)
@@ -69,7 +74,7 @@ else
 endif
 
 ifneq ($(TEST_FEATURES),)
-  TEST_ARGUMENTS = --no-default-features --features $(TEST_FEATURES)
+  TEST_ARGUMENTS = --features $(TEST_FEATURES)
 endif
 
 build: background-check-kbs
@@ -90,7 +95,7 @@ passport-resource-kbs:
 
 .PHONY: cli
 cli:
-	$(CARGO_ENV) cargo build -p kbs-client --locked --release --no-default-features --features $(RUST_CLI_FEATURES) $(TARGET_FLAG)
+	$(CARGO_ENV) cargo build -p kbs-client --locked --release --features $(RUST_CLI_FEATURES) $(TARGET_FLAG)
 
 .PHONY: cli-static-linux
 cli-static-linux:
@@ -99,8 +104,7 @@ cli-static-linux:
       --target=$(ARCH)-unknown-linux-gnu \
       --config "target.$(ARCH)-unknown-linux-gnu.rustflags = '-C target-feature=+crt-static'" \
       --locked \
-      --release \
-      --no-default-features
+      --release
 
 install-kbs:
 	install -D -m0755 $(RELEASE_DIR)/kbs $(INSTALL_DESTDIR)

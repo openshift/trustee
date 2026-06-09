@@ -1,12 +1,14 @@
-# rust:1.90.0
+# rust:1.93.0
 FROM --platform=${BUILDPLATFORM:-linux/amd64} \
-    docker.io/library/rust@sha256:e227f20ec42af3ea9a3c9c1dd1b2012aa15f12279b5e9d5fb890ca1c2bb5726c \
+    docker.io/library/rust@sha256:bbde3ca426faeebab3eb58b8005d3d6da70607817a14bb92a55c94611d4d905f \
     AS builder
 ARG BUILDPLATFORM=linux/amd64
 ARG ARCH=x86_64
 ARG ALIYUN=false
 ARG NEBULA_CA_PLUGIN=false
 ARG NEBULA_VERSION=v1.9.5
+ARG VAULT=true
+ARG EXTERNAL_PLUGIN=false
 
 WORKDIR /usr/src/kbs
 COPY . .
@@ -22,7 +24,7 @@ RUN if [ $(uname -m) != ${ARCH} ]; then \
     apt-get install -y libssl-dev:${OS_ARCH}; fi
 
 # Build and Install KBS
-RUN cd kbs && make AS_FEATURE=coco-as-grpc ALIYUN=${ALIYUN} ARCH=${ARCH} NEBULA_CA_PLUGIN=${NEBULA_CA_PLUGIN} && \
+RUN cd kbs && make AS_FEATURE=coco-as-grpc ALIYUN=${ALIYUN} ARCH=${ARCH} NEBULA_CA_PLUGIN=${NEBULA_CA_PLUGIN} VAULT=${VAULT} EXTERNAL_PLUGIN=${EXTERNAL_PLUGIN} && \
     make ARCH=${ARCH} install-kbs
 
 # Download and install Nebula

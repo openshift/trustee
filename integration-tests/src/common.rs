@@ -2,32 +2,25 @@
 // Licensed under the Apache License, Version 2.0, see LICENSE for details.
 // SPDX-License-Identifier: Apache-2.0
 
-use kbs::admin::{
-    simple::{SimpleAdminConfig, SimplePersonaConfig},
-    AdminBackendType, AdminConfig, AdminRole,
-};
+use const_format::concatcp;
+use kbs::admin::AdminConfig;
 use kbs::attestation::config::{AttestationConfig, AttestationServiceConfig};
-use kbs::config::HttpServerConfig;
 use kbs::config::KbsConfig;
-use kbs::policy_engine::PolicyEngineConfig;
+use kbs::config::{HttpServerConfig, TlsConfig};
 use kbs::token::AttestationTokenVerifierConfig;
 use kbs::ApiServer;
 
-use kbs::plugins::{
-    implementations::{resource::local_fs::LocalFsRepoDesc, RepositoryConfig},
-    PluginsConfig,
-};
+use kbs::plugins::{implementations::RepositoryConfig, PluginsConfig};
 
 use attestation_service::{
-    config::Config,
     ear_token::EarTokenConfiguration,
-    rvps::{grpc::RvpsRemoteConfig, RvpsConfig, RvpsCrateConfig},
+    rvps::{grpc::RvpsRemoteConfig, RvpsConfig},
 };
 
+use key_value_storage::{KeyValueStorageStructConfig, KeyValueStorageType, StorageBackendConfig, local_fs, local_json};
 use reference_value_provider_service::client as rvps_client;
 use reference_value_provider_service::config::Config as RVPSConfig;
 use reference_value_provider_service::rvps_api::reference::reference_value_provider_service_server::ReferenceValueProviderServiceServer;
-use reference_value_provider_service::storage::{local_json, ReferenceValueStorageConfig};
 use reference_value_provider_service::{server::RvpsServer, Rvps};
 
 use anyhow::{anyhow, bail, Result};
@@ -35,18 +28,34 @@ use base64::{
     engine::general_purpose::{STANDARD, URL_SAFE_NO_PAD},
     Engine,
 };
+use jsonwebtoken::{encode, Algorithm, EncodingKey, Header};
 use openssl::pkey::PKey;
 use serde_json::json;
 use std::sync::{Arc, Once};
+use std::time::{Duration, SystemTime, UNIX_EPOCH};
 use tempfile::TempDir;
+use tokio::sync::oneshot;
 use tokio::sync::RwLock;
+use tokio::task::JoinHandle;
 use tonic::transport::Server;
 use tracing::{info, Level};
 use tracing_subscriber::fmt;
 
-const KBS_URL: &str = "http://127.0.0.1:8081";
-const RVPS_URL: &str = "http://127.0.0.1:51003";
-const WAIT_TIME: u64 = 5000;
+const KBS_TCP: &str = "127.0.0.1:8081";
+const KBS_URL: &str = concatcp!("http://", KBS_TCP);
+
+const RVPS_TCP: &str = "127.0.0.1:51003";
+const RVPS_URL: &str = concatcp!("http://", RVPS_TCP);
+
+const READY_POLL_INTERVAL: Duration = Duration::from_millis(50);
+const READY_TIMEOUT: Duration = Duration::from_secs(30);
+
+/// Shared file lock key for integration tests that bind fixed local ports.
+pub const INTEGRATION_PORTS_LOCK: &str = "integration_ports";
+
+pub const ADMIN_ROLE: &str = "tester";
+pub const ADMIN_ISSUER: &str = "issuer";
+pub const ADMIN_AUDIENCE: &str = "audience";
 
 const ALLOW_ALL_POLICY: &str = "
     package policy
@@ -120,32 +129,90 @@ pub struct TestHarness {
     pub kbs_config: KbsConfig,
     pub auth_privkey: String,
     kbs_server_handle: actix_web::dev::ServerHandle,
+    rvps_url: Option<String>,
+    rvps_shutdown: Option<oneshot::Sender<()>>,
+    rvps_join: Option<JoinHandle<()>>,
     _work_dir: TempDir,
 
     // Future tests will use some parameters at runtime
     _test_parameters: TestParameters,
 }
 
+async fn wait_for_tcp(addr: &str) -> Result<()> {
+    let deadline = tokio::time::Instant::now() + READY_TIMEOUT;
+    loop {
+        if tokio::net::TcpStream::connect(addr).await.is_ok() {
+            return Ok(());
+        }
+        if tokio::time::Instant::now() >= deadline {
+            bail!("Timed out waiting for TCP endpoint {addr}");
+        }
+        tokio::time::sleep(READY_POLL_INTERVAL).await;
+    }
+}
+
+async fn wait_for_rvps(url: &str) -> Result<()> {
+    let deadline = tokio::time::Instant::now() + READY_TIMEOUT;
+    loop {
+        if rvps_client::query(url.to_string(), "ready-probe".to_string())
+            .await
+            .is_ok()
+        {
+            return Ok(());
+        }
+        if tokio::time::Instant::now() >= deadline {
+            bail!("Timed out waiting for RVPS at {url}");
+        }
+        tokio::time::sleep(READY_POLL_INTERVAL).await;
+    }
+}
+
+async fn wait_for_reference_value(url: &str, key: &str) -> Result<()> {
+    let deadline = tokio::time::Instant::now() + READY_TIMEOUT;
+    loop {
+        if rvps_client::query(url.to_string(), key.to_string())
+            .await?
+            .is_some()
+        {
+            return Ok(());
+        }
+        if tokio::time::Instant::now() >= deadline {
+            bail!("Timed out waiting for reference value {key} in RVPS at {url}");
+        }
+        tokio::time::sleep(READY_POLL_INTERVAL).await;
+    }
+}
+
 impl TestHarness {
+    fn sign_admin_token(&self) -> Result<String> {
+        let encoding_key = EncodingKey::from_ed_pem(self.auth_privkey.as_bytes())?;
+        let now = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .map_err(|e| anyhow!("System time error: {e}"))?
+            .as_secs();
+        let claims = json!({
+            "iss": ADMIN_ISSUER,
+            "role": ADMIN_ROLE,
+            "aud": [ADMIN_AUDIENCE],
+            "iat": now,
+            "exp": now + 7200,
+        });
+        let token = encode(&Header::new(Algorithm::EdDSA), &claims, &encoding_key)?;
+        Ok(token)
+    }
+
     pub async fn new(test_parameters: TestParameters) -> Result<TestHarness> {
         let auth_keypair = PKey::generate_ed25519()?;
         let auth_pubkey = String::from_utf8(auth_keypair.public_key_to_pem()?)?;
         let auth_privkey = String::from_utf8(auth_keypair.private_key_to_pem_pkcs8()?)?;
 
         let work_dir = TempDir::new()?;
-        let resource_dir = work_dir
+        let kbs_storage_path = work_dir
             .path()
-            .join("resources")
+            .join("kbs")
             .into_os_string()
             .into_string()
-            .map_err(|e| anyhow!("Failed to join resource path: {:?}", e))?;
-        let as_policy_dir = work_dir
-            .path()
-            .join("as_policy")
-            .into_os_string()
-            .into_string()
-            .map_err(|e| anyhow!("Failed to join as_policy path: {:?}", e))?;
-        let kbs_policy_path = work_dir.path().join("kbs_policy");
+            .map_err(|e| anyhow!("Failed to join kbs storage path: {:?}", e))?;
         let rv_path = work_dir
             .path()
             .join("reference_values")
@@ -156,39 +223,54 @@ impl TestHarness {
 
         tokio::fs::write(auth_pubkey_path.clone(), auth_pubkey.as_bytes()).await?;
 
-        let attestation_token_config = EarTokenConfiguration {
-            policy_dir: as_policy_dir,
-            ..Default::default()
-        };
+        let attestation_token_config = EarTokenConfiguration::default();
+
+        let mut rvps_url = None;
+        let mut rvps_shutdown = None;
+        let mut rvps_join = None;
 
         // Setup RVPS either remotely or builtin
         let rvps_config = match &test_parameters.rvps_type {
-            RvpsType::Builtin => RvpsConfig::BuiltIn(RvpsCrateConfig {
+            RvpsType::Builtin => RvpsConfig::BuiltIn {
                 extractors: None,
-                storage: ReferenceValueStorageConfig::LocalJson(local_json::Config {
-                    file_path: rv_path,
-                }),
-            }),
+                storage_type: None,
+            },
             RvpsType::Remote => {
                 info!("Starting Remote RVPS");
                 let service = Rvps::new(RVPSConfig {
                     extractors: None,
-                    storage: ReferenceValueStorageConfig::LocalJson(local_json::Config {
-                        file_path: rv_path,
-                    }),
-                })?;
+                    storage: StorageBackendConfig {
+                        storage_type: KeyValueStorageType::LocalJson,
+                        backends: KeyValueStorageStructConfig {
+                            local_json: Some(local_json::Config {
+                                file_dir_path: rv_path,
+                            }),
+                            local_fs: None,
+                            postgres: None,
+                            redis: None,
+                        },
+                    },
+                })
+                .await?;
                 let inner = Arc::new(RwLock::new(service));
                 let rvps_server = RvpsServer::new(inner.clone());
 
-                let rvps_future = Server::builder()
-                    .add_service(ReferenceValueProviderServiceServer::new(rvps_server))
-                    .serve("127.0.0.1:51003".parse()?);
+                let (shutdown_tx, shutdown_rx) = oneshot::channel();
+                let rvps_addr = RVPS_TCP.parse()?;
+                let join = tokio::spawn(async move {
+                    let _ = Server::builder()
+                        .add_service(ReferenceValueProviderServiceServer::new(rvps_server))
+                        .serve_with_shutdown(rvps_addr, async {
+                            shutdown_rx.await.ok();
+                        })
+                        .await;
+                });
 
-                tokio::spawn(rvps_future);
+                wait_for_rvps(RVPS_URL).await?;
 
-                // Wait for rvps to start
-                let duration = tokio::time::Duration::from_millis(WAIT_TIME);
-                tokio::time::sleep(duration).await;
+                rvps_url = Some(RVPS_URL.to_string());
+                rvps_shutdown = Some(shutdown_tx);
+                rvps_join = Some(join);
 
                 RvpsConfig::GrpcRemote(RvpsRemoteConfig {
                     address: RVPS_URL.to_string(),
@@ -197,67 +279,90 @@ impl TestHarness {
         };
 
         let admin_config = match &test_parameters.admin_type {
-            AdminType::Simple => AdminConfig {
-                admin_backend: AdminBackendType::Simple(SimpleAdminConfig {
-                    personas: vec![SimplePersonaConfig {
-                        id: "tester".to_string(),
-                        public_key_path: auth_pubkey_path.as_path().to_path_buf(),
-                    }],
-                }),
-                roles: Vec::new(),
-            },
-            AdminType::SimpleRestricted => AdminConfig {
-                admin_backend: AdminBackendType::Simple(SimpleAdminConfig {
-                    personas: vec![SimplePersonaConfig {
-                        id: "tester".to_string(),
-                        public_key_path: auth_pubkey_path.as_path().to_path_buf(),
-                    }],
-                }),
-                roles: vec![AdminRole {
-                    id: "tester".to_string(),
-                    allowed_endpoints: "^/kbs/v0/reference-value/[a-zA-Z0-9]+$".to_string(),
-                }],
-            },
-
-            AdminType::DenyAll => AdminConfig {
-                admin_backend: AdminBackendType::DenyAll,
-                roles: Vec::new(),
-            },
+            // Keep original "Simple" test semantics:
+            // requests must carry a verifiable admin token and are broadly authorized.
+            AdminType::Simple => serde_json::from_value(json!({
+                "authorization_mode": "AuthenticatedAuthorization",
+                "authorization": {
+                    "regex_acl": {
+                        "acls": [{
+                            "role": ADMIN_ROLE,
+                            "allowed_endpoints": "^/kbs/v0/.*$"
+                        }]
+                    }
+                },
+                "authentication": {
+                    "bearer_jwt": {
+                        "identity_providers": [{
+                            "issuer": ADMIN_ISSUER,
+                            "public_key_uri": auth_pubkey_path.as_path()
+                        }]
+                    }
+                }
+            }))?,
+            // Keep restricted authorization_mode behavior as "authenticated admin required and then ACL checked".
+            // Build via serde to avoid direct construction of private config fields.
+            AdminType::SimpleRestricted => serde_json::from_value(json!({
+                "authorization_mode": "AuthenticatedAuthorization",
+                "authorization": {
+                    "regex_acl": {
+                        "acls": [{
+                            "role": ADMIN_ROLE,
+                            "allowed_endpoints": "^/kbs/v0/reference-value/[a-zA-Z0-9]+$"
+                        }]
+                    }
+                },
+                "authentication": {
+                    "bearer_jwt": {
+                        "identity_providers": [{
+                            "issuer": ADMIN_ISSUER,
+                            "public_key_uri": auth_pubkey_path.as_path()
+                        }]
+                    }
+                }
+            }))?,
+            AdminType::DenyAll => AdminConfig::DenyAll {},
         };
 
         let kbs_config = KbsConfig {
             attestation_token: AttestationTokenVerifierConfig {
                 trusted_certs_paths: vec![],
-                insecure_key: true,
+                insecure_header_jwk: true,
                 trusted_jwk_sets: vec![],
                 extra_teekey_paths: vec![],
             },
             attestation_service: AttestationConfig {
-                attestation_service: AttestationServiceConfig::CoCoASBuiltIn(Config {
-                    work_dir: work_dir.path().to_path_buf(),
-                    rvps_config,
-                    attestation_token_broker: attestation_token_config,
-                    verifier_config: None,
-                }),
+                attestation_service: AttestationServiceConfig::CoCoASBuiltIn(
+                    kbs::attestation::coco::builtin::Config {
+                        rvps_config,
+                        attestation_token_broker: attestation_token_config,
+                        verifier_config: None,
+                        storage_type: None,
+                    },
+                ),
                 timeout: 5,
             },
             http_server: HttpServerConfig {
-                sockets: vec!["127.0.0.1:8081".parse()?],
-                private_key: None,
-                certificate: None,
+                sockets: vec![KBS_TCP.parse()?],
                 insecure_http: true,
                 payload_request_size: 2,
                 worker_count: Some(4),
+                tls: TlsConfig::default(),
             },
             admin: admin_config,
-            policy_engine: PolicyEngineConfig {
-                policy_path: kbs_policy_path,
-            },
-            plugins: vec![PluginsConfig::ResourceStorage(RepositoryConfig::LocalFs(
-                LocalFsRepoDesc {
-                    dir_path: resource_dir,
+            storage_backend: StorageBackendConfig {
+                storage_type: KeyValueStorageType::LocalFs,
+                backends: KeyValueStorageStructConfig {
+                    local_fs: Some(local_fs::Config {
+                        dir_path: kbs_storage_path,
+                    }),
+                    local_json: None,
+                    postgres: None,
+                    redis: None,
                 },
-            ))],
+            },
+            session_storage_type: None,
+            plugins: vec![PluginsConfig::ResourceStorage(RepositoryConfig::KvStorage)],
         };
         // Spawn the KBS Server
         let api_server = ApiServer::new(kbs_config.clone()).await?;
@@ -267,17 +372,29 @@ impl TestHarness {
 
         tokio::spawn(kbs_server);
 
+        wait_for_tcp(KBS_TCP).await?;
+
         Ok(TestHarness {
             kbs_config,
             auth_privkey,
             kbs_server_handle: kbs_handle,
+            rvps_url,
+            rvps_shutdown,
+            rvps_join,
             _work_dir: work_dir,
             _test_parameters: test_parameters,
         })
     }
 
-    pub async fn cleanup(&self) -> Result<()> {
+    pub async fn cleanup(mut self) -> Result<()> {
         self.kbs_server_handle.stop(true).await;
+
+        if let Some(tx) = self.rvps_shutdown.take() {
+            let _ = tx.send(());
+        }
+        if let Some(join) = self.rvps_join.take() {
+            let _ = join.await;
+        }
 
         Ok(())
     }
@@ -291,26 +408,21 @@ impl TestHarness {
             PolicyType::Custom(p) => p.to_string().into_bytes(),
         };
 
-        kbs_client::set_resource_policy(
-            KBS_URL,
-            self.auth_privkey.clone(),
-            policy_bytes,
-            // Optional HTTPS certs for KBS
-            vec![],
-        )
-        .await?;
+        let token = self.sign_admin_token()?;
+        kbs_client::set_resource_policy(KBS_URL, Some(token), policy_bytes, vec![]).await?;
 
         Ok(())
     }
 
     pub async fn set_attestation_policy(&self, policy: String, policy_id: String) -> Result<()> {
+        let token = self.sign_admin_token()?;
         kbs_client::set_attestation_policy(
             KBS_URL,
-            self.auth_privkey.clone(),
+            Some(token),
             policy.as_bytes().to_vec(),
-            None, // Policy type (default is rego)
+            None,
             Some(policy_id),
-            vec![], // Optional HTTPS certs for KBS
+            vec![],
         )
         .await?;
 
@@ -319,15 +431,8 @@ impl TestHarness {
 
     pub async fn set_secret(&self, secret_path: String, secret_bytes: Vec<u8>) -> Result<()> {
         info!("TEST: Setting Secret");
-        kbs_client::set_resource(
-            KBS_URL,
-            self.auth_privkey.clone(),
-            secret_bytes,
-            &secret_path,
-            // Optional HTTPS certs for KBS
-            vec![],
-        )
-        .await?;
+        let token = self.sign_admin_token()?;
+        kbs_client::set_resource(KBS_URL, Some(token), secret_bytes, &secret_path, vec![]).await?;
 
         Ok(())
     }
@@ -350,13 +455,16 @@ impl TestHarness {
         Ok(resource_bytes)
     }
 
-    pub async fn wait(&self) {
-        let duration = tokio::time::Duration::from_millis(WAIT_TIME);
-        tokio::time::sleep(duration).await;
+    pub async fn wait(&self) -> Result<()> {
+        wait_for_tcp(KBS_TCP).await?;
+        if let Some(url) = &self.rvps_url {
+            wait_for_rvps(url).await?;
+        }
+        Ok(())
     }
 
     pub async fn set_reference_value(&self, key: String, value: serde_json::Value) -> Result<()> {
-        let provenance = json!({key: value}).to_string();
+        let provenance = json!({&key: value}).to_string();
         let provenance = STANDARD.encode(provenance);
 
         let message = json!({
@@ -365,7 +473,13 @@ impl TestHarness {
             "payload": provenance
         });
 
-        rvps_client::register(RVPS_URL.to_string(), message.to_string()).await?;
+        let rvps_url = self
+            .rvps_url
+            .as_ref()
+            .ok_or_else(|| anyhow!("Reference values require a remote RVPS harness"))?;
+
+        rvps_client::register(rvps_url.clone(), message.to_string()).await?;
+        wait_for_reference_value(rvps_url, &key).await?;
 
         Ok(())
     }

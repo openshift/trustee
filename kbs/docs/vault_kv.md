@@ -28,16 +28,13 @@ encryption at rest.
 
 ### 1. Enable the Vault Feature
 
-Build the KBS with the `vault` cargo feature enabled:
+The `vault` backend is enabled by default.
+
+To disable it:
 
 ```bash
 cd kbs
-
-# Using the Makefile
-make VAULT=true
-
-# Or directly with cargo
-cargo build --features vault
+make VAULT=false
 ```
 
 ### 2. Configure Vault or OpenBao Access
@@ -75,7 +72,7 @@ Add the Vault configuration to your KBS config file (e.g., `kbs-config.toml`):
 ```toml
 [[plugins]]
 name = "resource"
-type = "Vault"
+storage_backend_type = "Vault"
 vault_url = "https://vault.example.com:8200"
 token = "hvs.your-vault-token-here"
 mount_path = "kv"                              # Optional, defaults to "secret"
@@ -112,7 +109,7 @@ The backend supports secure HTTPS communication with comprehensive TLS configura
 ```toml
 [[plugins]]
 name = "resource"
-type = "Vault"
+storage_backend_type = "Vault"
 vault_url = "https://vault.example.com:8200"
 token = "hvs.your-vault-token-here"
 verify_ssl = true
@@ -125,7 +122,7 @@ For enterprise environments with custom certificate authorities:
 ```toml
 [[plugins]]
 name = "resource"
-type = "Vault"
+storage_backend_type = "Vault"
 vault_url = "https://vault.mycompany.com:8200"
 token = "hvs.your-vault-token-here"
 verify_ssl = true
@@ -140,7 +137,7 @@ ca_certs = [
 ```toml
 [[plugins]]
 name = "resource"
-type = "Vault"
+storage_backend_type = "Vault"
 vault_url = "http://vault-dev.mycompany.com:8200"
 token = "hvs.your-vault-token-here"
 verify_ssl = false

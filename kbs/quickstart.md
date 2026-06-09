@@ -30,10 +30,18 @@ sudo apt-get install -y \
 	protobuf-compiler
 ```
 
-Generate User authentication key pair:
+Generate User authentication key pair and admin token:
 ```shell
 openssl genpkey -algorithm ed25519 > config/private.key
 openssl pkey -in config/private.key -pubout -out config/public.pub
+b64url() { openssl base64 -A | tr '+/' '-_' | tr -d '='; }
+header='{"alg":"EdDSA","typ":"JWT"}'
+iat=$(date +%s); exp=$((iat + 315360000))
+payload="{\"issuer\":\"admin\",\"subject\":\"admin\",\"audiences\":[],\"iat\":${iat},\"exp\":${exp}}"
+h64=$(printf '%s' "$header" | b64url)
+p64=$(printf '%s' "$payload" | b64url)
+sig=$(printf '%s' "${h64}.${p64}" | openssl pkeyutl -sign -inkey config/private.key -rawin | b64url)
+printf '%s.%s.%s\n' "$h64" "$p64" "$sig" > config/admin-token
 ```
 
 If you want connect KBS with HTTPS,
@@ -76,7 +84,7 @@ EOF
 Use `kbs-client` to upload resource data to KBS storage:
 
 ```shell
-kbs-client --url http://127.0.0.1:8080 config --auth-private-key config/private.key set-resource --resource-file test/dummy_data --path default/test/dummy
+kbs-client --url http://127.0.0.1:8080 config --admin-token-file config/admin-token set-resource --resource-file test/dummy_data --path default/test/dummy
 ```
 
 Here we assigned a custom path for this resource: `default/test/dummy`.
@@ -94,7 +102,7 @@ To test the KBS with sample evidence, you'll need to update the resource policy
 to something more permissive.
 This can be done with a command such as
 ```shell
-kbs-client --url http://127.0.0.1:8080 config --auth-private-key config/private.key  set-resource-policy --policy-file sample_policies/allow_all.rego
+kbs-client --url http://127.0.0.1:8080 config --admin-token-file config/admin-token set-resource-policy --policy-file sample_policies/allow_all.rego
 ```
 
 ## Passport Mode
@@ -129,7 +137,7 @@ EOF
 Use `kbs-client` to upload resource data to KBS storage:
 
 ```shell
-kbs-client --url http://127.0.0.1:50002 config --auth-private-key config/private.key set-resource --resource-file test/dummy_data --path default/test/dummy
+kbs-client --url http://127.0.0.1:50002 config --admin-token-file config/admin-token set-resource --resource-file test/dummy_data --path default/test/dummy
 ```
 
 Here we assigned a custom path for this resource: `default/test/dummy`.
@@ -160,7 +168,7 @@ kbs-client --url http://127.0.0.1:50002 get-resource --attestation-token test/at
 ### Attestation Policy
 Use `kbs-client` to set a custom attestation policy to KBS in background check mode:
 ```shell
-kbs-client --url http://127.0.0.1:50001 config --auth-private-key config/private.key set-attestation-policy --policy-file /path/to/policy
+kbs-client --url http://127.0.0.1:50001 config --admin-token-file config/admin-token set-attestation-policy --policy-file /path/to/policy
 ```
 
 Where `/path/to/policy` should be replaced by the real path to your policy file.
@@ -190,14 +198,14 @@ Refer to [Attestation-Service](https://github.com/confidential-containers/attest
 ### Resource Policy
 Use `kbs-client` to set custom resource policy to KBS:
 ```shell
-kbs-client --url http://127.0.0.1:50002 config --auth-private-key config/private.key set-attestation-policy --policy-file /path/to/policy
+kbs-client --url http://127.0.0.1:50002 config --admin-token-file config/admin-token set-attestation-policy --policy-file /path/to/policy
 ```
 
 Where `/path/to/policy` should be replaced by the real path to your policy file.
 
 Resource policy also needs to be the `rego` syntax defined by [Open Policy Agent](https://www.openpolicyagent.org/).
 
-You can read the notes of [default resource policy file](src/policy_engine/opa/default_policy.rego) for more details of resource policy.
+You can read the notes of [default resource policy file](sample_policies/deny_all.rego) for more details of resource policy.
 
 ## Attestation Token Certificate
 
@@ -244,23 +252,22 @@ Adding the following content to the config file of Resource KBS to specify trust
 or JWK set which are used to verify the trustworthy of the Attestation Token:
 
 ```toml
-[attestation_token_broker]
-# Path of root certificate used to verify the trustworthy of `x5c` extension in the JWT
+[attestation_token]
+# Trust anchors (PEM) used to validate the `x5c` chain on a header-embedded `jwk`
+# when `insecure_header_jwk` is false.
 trusted_certs_paths = ["/path/to/trusted_cacert.pem"]
 
-# URL (`path://` or `https://`) of the trusted JWK that can be indexed by `kid` in
-# JWT Header.
+# Trusted JWK set (`file://` or `https://`) used when the JWT header carries `kid`
+# instead of an embedded `jwk`.
 trusted_jwk_sets = ["/url/to/trusted_jwk_set"]
 
-# For Attestation Services like CoCo-AS, the public key to verify the JWT will be given
-# in the token's `jwk` field (with or without the public key cert chain `x5c`).
-#
-# - If this flag is set to `true`, KBS will ignore to verify the trustworthy of the `jwk`.
-# - If this flag is set to `false`, KBS will look up its `trusted_certs_paths` and the `x5c`
-# field to verify the trustworthy of the `jwk`.
-insecure_key = false
+# When false, header `jwk` keys must be endorsed via `x5c` and `trusted_certs_paths`.
+# When true, the header `jwk` is trusted without endorsement checks (testing only).
+insecure_header_jwk = false
 ```
 
-If `trusted_certs_paths` field is not set, KBS will skip the verification of the certificate in Attestation Token.
+When `insecure_header_jwk` is `false` and the token header contains a `jwk`, you must configure
+`trusted_certs_paths`; otherwise verification fails. Tokens that use `kid` rely on
+`trusted_jwk_sets` instead and are not affected by `insecure_header_jwk`.
 
 Refer to [config.md](./docs/config.md) for more details.

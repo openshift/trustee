@@ -5,7 +5,7 @@ namespace: coco-tenant
 images:
 - name: kbs-container-image
   newName: ghcr.io/confidential-containers/key-broker-service
-  newTag: built-in-as-v0.17.0
+  newTag: built-in-as-v0.20.0
 
 resources:
 - namespace.yaml
@@ -17,9 +17,6 @@ configMapGenerator:
 - files:
   - kbs-config.toml
   name: kbs-config
-- files:
-  - policy.rego
-  name: policy-config
 
 # KBS auth public key.
 secretGenerator:

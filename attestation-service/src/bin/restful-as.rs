@@ -4,7 +4,7 @@ use actix_cors::Cors;
 use actix_web::{http::header, web, App, HttpServer};
 use anyhow::Result;
 use attestation_service::{config::Config, config::ConfigError, AttestationService, ServiceError};
-use clap::{arg, command, Parser};
+use clap::Parser;
 use openssl::{
     pkey::PKey,
     ssl::{SslAcceptor, SslMethod},
@@ -177,7 +177,7 @@ loglevel: {env_filter}
 
     let server = match (cli.https_prikey, cli.https_pubkey_cert) {
         (Some(prikey), Some(pubkey_cert)) => {
-            let mut builder = SslAcceptor::mozilla_modern(SslMethod::tls())?;
+            let mut builder = SslAcceptor::mozilla_intermediate_v5(SslMethod::tls())?;
 
             let prikey = tokio::fs::read(prikey)
                 .await

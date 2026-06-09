@@ -1,3 +1,5 @@
+session_storage_type = "memory"
+
 [http_server]
 sockets = ["0.0.0.0:8080"]
 # Ideally we should use some solution like cert-manager to issue let's encrypt based certificate:
@@ -15,4 +17,4 @@ certs_file = "https://portal.trustauthority.intel.com"
 timeout = 5
 
 [admin]
-type = "DenyAll"
+authorization_mode = "DenyAll"

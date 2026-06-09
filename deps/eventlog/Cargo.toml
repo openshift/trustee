@@ -7,7 +7,6 @@ edition = "2021"
 [dependencies]
 anyhow.workspace = true
 base64.workspace = true
-byteorder.workspace = true
 hex.workspace = true
 tracing.workspace = true
 scroll = { version = "0.13.0", default-features = false, features = ["derive"] }
@@ -15,7 +14,7 @@ serde.workspace = true
 serde_json.workspace = true
 serde_with = { workspace = true, optional = true }
 sha2.workspace = true
-sm3 = "0.4.2"
+sm3 = "0.5.0"
 
 [build-dependencies]
 
