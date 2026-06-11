@@ -27,60 +27,55 @@ anyhow = "1.0"
 assert-json-diff = "2.0.2"
 async-trait = "0.1.88"
 base64 = "0.22.1"
-byteorder = "1.5.0"
 cfg-if = "1.0.4"
-chrono = "0.4.44"
+chrono = "0.4.45"
 clap = { version = "4", features = ["derive"] }
-config = "0.15.19"
+config = "0.15.23"
+const_format = "0.2.36"
 educe = "0.6"
-ear = { git = "https://github.com/veraison/rust-ear.git", rev = "3d5fa46" }
+ear = "0.5.0"
 hex = "0.4.3"
-kbs_protocol = { git = "https://github.com/confidential-containers/guest-components.git", rev = "7be23a1", default-features = false }
-kbs-types = "0.14.0"
-kms = { git = "https://github.com/confidential-containers/guest-components.git", rev = "7be23a1", default-features = false }
+kbs_protocol = { git = "https://github.com/confidential-containers/guest-components.git", rev = "1fcebcb66a3c21b62e852819d5b55212c90eba2a", default-features = false }
+kbs-types = "0.15.0"
+kms = { git = "https://github.com/confidential-containers/guest-components.git", rev = "1fcebcb66a3c21b62e852819d5b55212c90eba2a", default-features = false }
 jsonwebtoken = { version = "10", default-features = false, features = [
     "aws_lc_rs",
     "use_pem",
 ] }
-lazy_static = "1.4.0"
-openssl = "0.10.75"
+mobc = "0.9.0"
+openssl = "0.10.80"
 p256 = "0.13.2"
 p521 = "0.13.2"
 prost = "0.14"
-regorus = { version = "0.5.0", default-features = false, features = [
+regorus = { version = "0.10.1", default-features = false, features = [
     "regex",
     "base64",
     "time",
     "std",
 ] }
-reqwest = { version = "0.12", default-features = false, features = [
-    "default-tls",
-    "json",
-] }
+reqwest = { version = "0.13", default-features = false, features = ["json"] }
 rstest = "0.26.1"
 serde = { version = "1.0", features = ["derive"] }
-serde_json = "1.0.143"
-serde_qs = "0.15.0"
-serde_with = { version = "3.17.0", features = ["base64", "hex"] }
-serial_test = { version = "3.2.0", features = ["async"] }
-sha2 = "0.10"
-shadow-rs = "1.7.0"
+serde_json = "1.0.150"
+serde_with = { version = "3.21.0", features = ["base64", "hex"] }
+serial_test = { version = "3.5.0", features = ["async"] }
+sha2 = "0.11"
+shadow-rs = "2.0.0"
 strum = { version = "0.28", features = ["derive"] }
 thiserror = "2.0"
 tokio = { version = "1", features = ["full"], default-features = false }
-toml = "0.9.10"
-tempfile = "3.25.0"
-tonic = "0.14"
+toml = "1.1.2"
+tempfile = "3.27.0"
+tonic = { version = "0.14", features = ["tls-webpki-roots"] }
+tonic-health = "0.14"
 tonic-prost = "0.14"
 tonic-prost-build = "0.14"
-rand = "0.8.5"
 rsa = { version = "0.9.10", features = ["sha2"] }
 time = { version = "0.3.47", features = ["std"] }
 tracing = "0.1.44"
-tracing-subscriber = { version = "0.3.22", features = ["env-filter"] }
-uuid = { version = "1.21.0", features = ["v4"] }
+tracing-subscriber = { version = "0.3.23", features = ["env-filter"] }
+uuid = { version = "1.23.2", features = ["v4"] }
+zeroize = "1"
 
 [patch.crates-io]
-ear = { git = "https://github.com/veraison/rust-ear.git", rev = "3d5fa46" }
 sev = { git = "https://github.com/virtee/sev", rev = "d487809188c3c92e397bc92e2cb2a85eb982c980" }
-nvml-wrapper = { git = "https://github.com/rust-nvml/nvml-wrapper", rev = "7e0752f331" }

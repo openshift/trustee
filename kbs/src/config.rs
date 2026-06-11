@@ -4,30 +4,113 @@
 
 use crate::admin::AdminConfig;
 use crate::plugins::PluginsConfig;
-use crate::policy_engine::PolicyEngineConfig;
 use crate::token::AttestationTokenVerifierConfig;
-use anyhow::anyhow;
+use anyhow::{anyhow, bail, Context, Result};
 use clap::Parser;
 use config::{Config, File};
+use const_format::concatcp;
+use key_value_storage::{KeyValueStorageType, StorageBackendConfig};
 use serde::Deserialize;
 use std::net::SocketAddr;
 use std::path::{Path, PathBuf};
+use strum::AsRefStr;
 
 const DEFAULT_INSECURE_HTTP: bool = false;
 const DEFAULT_SOCKET: &str = "127.0.0.1:8080";
 const DEFAULT_PAYLOAD_REQUEST_SIZE: u32 = 2;
+
+/// TLS security profile
+#[derive(Clone, Debug, Default, Deserialize, PartialEq)]
+#[serde(rename_all = "lowercase")]
+pub enum TlsProfile {
+    Old,
+    #[default]
+    Intermediate,
+    Modern,
+    Custom,
+}
+
+/// TLS protocol version
+#[derive(Clone, Debug, Deserialize, PartialEq, AsRefStr)]
+pub enum TlsVersion {
+    #[serde(rename = "1.2")]
+    #[strum(serialize = "1.2")]
+    Tls12,
+    #[serde(rename = "1.3")]
+    #[strum(serialize = "1.3")]
+    Tls13,
+}
+
+/// TLS/HTTPS configuration
+#[derive(Clone, Debug, Default, Deserialize, PartialEq)]
+#[serde(default)]
+pub struct TlsConfig {
+    /// HTTPS private key.
+    pub private_key: Option<PathBuf>,
+
+    /// HTTPS Certificate.
+    pub certificate: Option<PathBuf>,
+
+    /// TLS security profile: old, intermediate, modern, or custom
+    #[serde(rename = "tls_profile")]
+    pub profile: TlsProfile,
+
+    /// Minimum TLS version (for custom profile)
+    #[serde(rename = "tls_min_version")]
+    pub min_version: Option<TlsVersion>,
+
+    /// Maximum TLS version (for custom profile)
+    #[serde(rename = "tls_max_version")]
+    pub max_version: Option<TlsVersion>,
+
+    /// TLS cipher suites (colon-separated OpenSSL cipher list)
+    #[serde(rename = "tls_ciphers")]
+    pub ciphers: Option<String>,
+
+    /// TLS groups for key exchange (colon-separated list)
+    #[serde(rename = "tls_groups")]
+    pub groups: Option<String>,
+}
+
+impl TlsConfig {
+    /// Validate TLS configuration consistency
+    pub fn validate(&self) -> Result<()> {
+        // Warn if non-custom profile has custom fields
+        if self.profile != TlsProfile::Custom
+            && (self.min_version.is_some()
+                || self.max_version.is_some()
+                || self.ciphers.is_some()
+                || self.groups.is_some())
+        {
+            tracing::warn!(
+                "TLS profile is {:?} but custom fields are set. Custom fields will override profile defaults.",
+                self.profile
+            );
+        }
+
+        // Validate version range
+        if let (Some(min_version), Some(max_version)) = (&self.min_version, &self.max_version) {
+            if matches!(
+                (min_version, max_version),
+                (TlsVersion::Tls13, TlsVersion::Tls12)
+            ) {
+                bail!(
+                    "tls_min_version ({}) cannot be greater than tls_max_version ({})",
+                    min_version.as_ref(),
+                    max_version.as_ref()
+                );
+            }
+        }
+
+        Ok(())
+    }
+}
 
 #[derive(Clone, Debug, Deserialize, PartialEq)]
 #[serde(default)]
 pub struct HttpServerConfig {
     /// Socket addresses (IP:port) to listen on, e.g. 127.0.0.1:8080.
     pub sockets: Vec<SocketAddr>,
-
-    /// HTTPS private key.
-    pub private_key: Option<PathBuf>,
-
-    /// HTTPS Certificate.
-    pub certificate: Option<PathBuf>,
 
     /// Insecure HTTP.
     /// WARNING: Using this option makes the HTTP connection insecure.
@@ -39,17 +122,20 @@ pub struct HttpServerConfig {
     /// Number of worker threads for the actix-web server.
     /// If not specified, defaults to the number of logical CPU cores.
     pub worker_count: Option<usize>,
+
+    /// TLS/HTTPS configuration
+    #[serde(flatten)]
+    pub tls: TlsConfig,
 }
 
 impl Default for HttpServerConfig {
     fn default() -> Self {
         Self {
             sockets: vec![DEFAULT_SOCKET.parse().expect("unexpected parse error")],
-            private_key: None,
-            certificate: None,
             insecure_http: DEFAULT_INSECURE_HTTP,
             payload_request_size: DEFAULT_PAYLOAD_REQUEST_SIZE,
             worker_count: None,
+            tls: TlsConfig::default(),
         }
     }
 }
@@ -72,13 +158,69 @@ pub struct KbsConfig {
     /// Configuration for the KBS admin API
     pub admin: AdminConfig,
 
-    /// Policy engine configuration used for evaluating whether the TCB status has access to
-    /// specific resources.
+    /// Unified storage backend configuration for all storage needs in KBS.
+    /// When provided, this will be used to create storage instances for:
+    /// - KBS itself (instance: "kbs")
+    /// - Resource plugin storage (instance: [`plugins::RESOURCE_STORAGE_NAMESPACE`])
+    /// - Built-in AS policy storage (instance: [`attestation_service::AS_POLICY_STORAGE_NAMESPACE`])
+    /// - Built-in AS RVPS storage (instance: [`rvps::REFERENCE_VALUE_STORAGE_NAMESPACE`])
     #[serde(default)]
-    pub policy_engine: PolicyEngineConfig,
+    pub storage_backend: StorageBackendConfig,
+
+    /// Optional session storage type used for KBS protocol session state.
+    ///
+    /// KBS protocol state will be stored in system-wide key value storage [`storage_backend.storage_type`] by default.
+    /// Use this field to specify an additional storage backend just for KBS protocol session state.
+    #[serde(default)]
+    pub session_storage_type: Option<KeyValueStorageType>,
 
     #[serde(default)]
     pub plugins: Vec<PluginsConfig>,
+}
+
+/// The commit ref of the config documentation in the Trustee repository
+const DOC_COMMIT_REF: &str = "dc6ea0dd";
+
+const CONFIG_DOC: &str = concatcp!(
+    "https://github.com/confidential-containers/trustee/blob/",
+    DOC_COMMIT_REF,
+    "/kbs/docs/config.md"
+);
+
+fn config_section_hint(err: &str) -> Option<&'static str> {
+    if err.contains("admin") || err.contains("admin.") {
+        return Some(concatcp!(CONFIG_DOC, "#admin-api-configuration"));
+    }
+    if err.contains("attestation_service") {
+        return Some(concatcp!(CONFIG_DOC, "#attestation-configuration"));
+    }
+    if err.contains("attestation_token") {
+        return Some(concatcp!(CONFIG_DOC, "#attestation-token-configuration"));
+    }
+    if err.contains("http_server") {
+        return Some(concatcp!(CONFIG_DOC, "#http-server-configuration"));
+    }
+    if err.contains("storage_backend") {
+        return Some(concatcp!(CONFIG_DOC, "#storage-backend-configuration"));
+    }
+    if err.contains("plugins") {
+        return Some(concatcp!(CONFIG_DOC, "#plugins-configuration"));
+    }
+    None
+}
+
+fn format_config_load_error(config_path: &Path, err: impl std::fmt::Display) -> anyhow::Error {
+    let err_str = err.to_string();
+    let mut message = format!(
+        "failed to load configuration file {}: {err_str}",
+        config_path.display()
+    );
+    if let Some(doc) = config_section_hint(&err_str) {
+        message.push_str("\nSee ");
+        message.push_str(doc);
+        message.push('.');
+    }
+    anyhow!(message)
 }
 
 impl TryFrom<&Path> for KbsConfig {
@@ -87,12 +229,27 @@ impl TryFrom<&Path> for KbsConfig {
     /// Load `Config` from a configuration file. Supported formats are all formats supported by the
     /// `config` crate. See `KbsConfig` for schema information.
     fn try_from(config_path: &Path) -> Result<Self, Self::Error> {
-        let c = Config::builder()
-            .add_source(File::with_name(config_path.to_str().unwrap()))
-            .build()?;
+        let config_name = config_path
+            .to_str()
+            .ok_or_else(|| anyhow!("configuration path is not valid UTF-8"))?;
 
-        c.try_deserialize()
-            .map_err(|e| anyhow!("invalid config: {}", e))
+        let c = Config::builder()
+            .add_source(File::with_name(config_name))
+            .build()
+            .map_err(|e| format_config_load_error(config_path, e))?;
+
+        let config: KbsConfig = c
+            .try_deserialize()
+            .map_err(|e| format_config_load_error(config_path, e))?;
+
+        // Validate TLS configuration
+        config
+            .http_server
+            .tls
+            .validate()
+            .context("TLS configuration error")?;
+
+        Ok(config)
     }
 }
 
@@ -108,23 +265,18 @@ pub struct Cli {
 
 #[cfg(test)]
 mod tests {
-    use std::path::{Path, PathBuf};
+    use std::path::Path;
 
     use crate::{
-        admin::{
-            simple::{SimpleAdminConfig, SimplePersonaConfig},
-            AdminBackendType, AdminConfig,
-        },
+        admin::AdminConfig,
         config::{
-            HttpServerConfig, DEFAULT_INSECURE_HTTP, DEFAULT_PAYLOAD_REQUEST_SIZE, DEFAULT_SOCKET,
+            HttpServerConfig, TlsConfig, TlsProfile, TlsVersion, DEFAULT_INSECURE_HTTP,
+            DEFAULT_PAYLOAD_REQUEST_SIZE, DEFAULT_SOCKET,
         },
         plugins::{
-            implementations::{
-                resource::local_fs::LocalFsRepoDesc, RepositoryConfig, SampleConfig,
-            },
+            implementations::{RepositoryConfig, SampleConfig},
             PluginsConfig,
         },
-        policy_engine::{PolicyEngineConfig, DEFAULT_POLICY_PATH},
         token::AttestationTokenVerifierConfig,
     };
 
@@ -133,19 +285,69 @@ mod tests {
     #[cfg(feature = "coco-as-builtin")]
     use attestation_service::{
         ear_token::{EarTokenConfiguration, COCO_AS_ISSUER_NAME, DEFAULT_TOKEN_DURATION},
-        rvps::{grpc::RvpsRemoteConfig, RvpsConfig, RvpsCrateConfig},
+        rvps::{grpc::RvpsRemoteConfig, RvpsConfig},
     };
 
-    #[cfg(feature = "coco-as-builtin")]
-    use reference_value_provider_service::storage::{local_fs, ReferenceValueStorageConfig};
+    use key_value_storage::{
+        local_json, KeyValueStorageStructConfig, KeyValueStorageType, StorageBackendConfig,
+    };
 
     use rstest::rstest;
+    use serde_json::json;
+
+    fn make_token_authorization_admin_config() -> AdminConfig {
+        serde_json::from_value(json!({
+            "authorization_mode": "AuthenticatedAuthorization",
+            "authentication": {
+                "bearer_jwt": {
+                    "identity_providers": [
+                        {
+                            "issuer": "admin1-issuer",
+                            "public_key_uri": "/opt/confidential-containers/trustee/admin1-pubkey.pem",
+                        },
+                        {
+                            "issuer": "admin2-issuer",
+                            "public_key_uri": "/opt/confidential-containers/trustee/admin2-pubkey.pem",
+                        }
+                    ]
+                }
+            },
+            "authorization": {
+                "regex_acl": {
+                    "acls": [
+                        {
+                            "role": "admin1",
+                            "allowed_endpoints": "^/kbs/v0/resource/.+$",
+                        },
+                        {
+                            "role": "admin2",
+                            "allowed_endpoints": "^/kbs/v0/config/.+$",
+                        }
+                    ]
+                }
+            }
+        }))
+        .expect("valid token authorization admin config")
+    }
+
+    fn make_token_authorization_admin_config_with_defaults() -> AdminConfig {
+        serde_json::from_value(json!({
+            "authorization_mode": "AuthenticatedAuthorization",
+            "authentication": {
+                "bearer_jwt": {}
+            },
+            "authorization": {
+                "regex_acl": {}
+            }
+        }))
+        .expect("valid token authorization admin config with defaults")
+    }
 
     #[rstest]
     #[case("test_data/configs/coco-as-grpc-1.toml",         KbsConfig {
         attestation_token: AttestationTokenVerifierConfig {
             trusted_certs_paths: vec!["/etc/ca".into(), "/etc/ca2".into()],
-            insecure_key: false,
+            insecure_header_jwk: false,
             trusted_jwk_sets: vec![],
             extra_teekey_paths: vec![],
         },
@@ -162,32 +364,41 @@ mod tests {
         },
         http_server: HttpServerConfig {
             sockets: vec!["0.0.0.0:8080".parse().unwrap()],
-            private_key: Some("/etc/kbs-private.key".into()),
-            certificate: Some("/etc/kbs-cert.pem".into()),
             insecure_http: false,
             payload_request_size: DEFAULT_PAYLOAD_REQUEST_SIZE,
             worker_count: None,
+            tls: TlsConfig {
+                private_key: Some("/etc/kbs-private.key".into()),
+                certificate: Some("/etc/kbs-cert.pem".into()),
+                profile: TlsProfile::default(),
+                min_version: None,
+                max_version: None,
+                ciphers: None,
+                groups: None,
+            },
         },
-        admin: AdminConfig {
-            admin_backend: AdminBackendType::DenyAll,
-            roles: Vec::new(),
+        admin: AdminConfig::DenyAll {},
+        storage_backend: StorageBackendConfig {
+            storage_type: KeyValueStorageType::LocalJson,
+            backends: KeyValueStorageStructConfig {
+                local_json: Some(local_json::Config {
+                    file_dir_path: "/opt/confidential-containers/trustee".into(),
+                }),
+                local_fs: None,
+                postgres: None,
+                redis: None,
+            },
         },
-        policy_engine: PolicyEngineConfig {
-            policy_path: PathBuf::from("/etc/kbs-policy.rego"),
-        },
+        session_storage_type: None,
         plugins: vec![PluginsConfig::Sample(SampleConfig {
             item: "value1".into(),
         }),
-        PluginsConfig::ResourceStorage(RepositoryConfig::LocalFs(
-            LocalFsRepoDesc {
-                dir_path: "/tmp/kbs-resource".into(),
-            },
-        ))],
+        PluginsConfig::ResourceStorage(RepositoryConfig::KvStorage)],
     })]
     #[case("test_data/configs/coco-as-builtin-1.toml",         KbsConfig {
         attestation_token: AttestationTokenVerifierConfig {
             trusted_certs_paths: vec![],
-            insecure_key: false,
+            insecure_header_jwk: false,
             trusted_jwk_sets: vec![],
             extra_teekey_paths: vec![],
         },
@@ -195,8 +406,8 @@ mod tests {
         attestation_service: crate::attestation::config::AttestationConfig {
             attestation_service:
                 crate::attestation::config::AttestationServiceConfig::CoCoASBuiltIn(
-                    attestation_service::config::Config {
-                        work_dir: "/opt/coco/attestation-service".into(),
+                    crate::attestation::coco::builtin::Config {
+                        storage_type: None,
                         rvps_config: RvpsConfig::GrpcRemote(RvpsRemoteConfig {
                             address: "http://127.0.0.1:50003".into(),
                         }),
@@ -213,25 +424,30 @@ mod tests {
         },
         http_server: HttpServerConfig {
             sockets: vec![DEFAULT_SOCKET.parse().unwrap()],
-            private_key: None,
-            certificate: None,
             insecure_http: DEFAULT_INSECURE_HTTP,
             payload_request_size: DEFAULT_PAYLOAD_REQUEST_SIZE,
             worker_count: None,
+            tls: TlsConfig::default(),
         },
-        admin: AdminConfig {
-            admin_backend: AdminBackendType::DenyAll,
-            roles: Vec::new(),
+        admin: AdminConfig::DenyAll {},
+        storage_backend: StorageBackendConfig {
+            storage_type: KeyValueStorageType::LocalJson,
+            backends: KeyValueStorageStructConfig {
+                local_json: Some(local_json::Config {
+                    file_dir_path: "/opt/confidential-containers/trustee".into(),
+                }),
+                local_fs: None,
+                postgres: None,
+                redis: None,
+            },
         },
-        policy_engine: PolicyEngineConfig {
-            policy_path: DEFAULT_POLICY_PATH.into(),
-        },
+        session_storage_type: None,
         plugins: Vec::new(),
     })]
     #[case("test_data/configs/intel-ta-1.toml",         KbsConfig {
         attestation_token: AttestationTokenVerifierConfig {
             trusted_jwk_sets: vec!["/etc/ca".into(), "/etc/ca2".into()],
-            insecure_key: false,
+            insecure_header_jwk: false,
             trusted_certs_paths: vec![],
             extra_teekey_paths: vec![],
         },
@@ -251,27 +467,36 @@ mod tests {
         },
         http_server: HttpServerConfig {
             sockets: vec!["0.0.0.0:8080".parse().unwrap()],
-            private_key: Some("/etc/kbs-private.key".into()),
-            certificate: Some("/etc/kbs-cert.pem".into()),
             insecure_http: false,
             payload_request_size: DEFAULT_PAYLOAD_REQUEST_SIZE,
             worker_count: None,
+            tls: TlsConfig {
+                private_key: Some("/etc/kbs-private.key".into()),
+                certificate: Some("/etc/kbs-cert.pem".into()),
+                profile: TlsProfile::default(),
+                min_version: None,
+                max_version: None,
+                ciphers: None,
+                groups: None,
+            },
         },
-        admin: AdminConfig {
-            admin_backend: AdminBackendType::DenyAll,
-            roles: Vec::new(),
+        admin: AdminConfig::DenyAll {},
+        storage_backend: StorageBackendConfig {
+            storage_type: KeyValueStorageType::LocalJson,
+            backends: KeyValueStorageStructConfig {
+                local_json: Some(local_json::Config {
+                    file_dir_path: "/opt/confidential-containers/trustee".into(),
+                }),
+                local_fs: None,
+                postgres: None,
+                redis: None,
+            },
         },
-        policy_engine: PolicyEngineConfig {
-            policy_path: PathBuf::from("/etc/kbs-policy.rego"),
-        },
+        session_storage_type: None,
         plugins: vec![PluginsConfig::Sample(SampleConfig {
             item: "value1".into(),
         }),
-        PluginsConfig::ResourceStorage(RepositoryConfig::LocalFs(
-            LocalFsRepoDesc {
-                dir_path: "/tmp/kbs-resource".into(),
-            },
-        ))],
+        PluginsConfig::ResourceStorage(RepositoryConfig::KvStorage)],
     })]
     #[case("test_data/configs/coco-as-grpc-2.toml",         KbsConfig {
         attestation_token: AttestationTokenVerifierConfig {
@@ -290,28 +515,30 @@ mod tests {
         },
         http_server: HttpServerConfig {
             sockets: vec!["0.0.0.0:8080".parse().unwrap()],
-            private_key: None,
-            certificate: None,
             insecure_http: true,
             payload_request_size: DEFAULT_PAYLOAD_REQUEST_SIZE,
             worker_count: None,
+            tls: TlsConfig::default(),
         },
-        admin: AdminConfig {
-            admin_backend: AdminBackendType::Simple(SimpleAdminConfig {
-                personas: vec![SimplePersonaConfig {
-                    id: "admin1".to_string(),
-                    public_key_path: "/opt/confidential-containers/trustee/admin1-pubkey.pem".into()
-                }],
-            }),
-            roles: Vec::new(),
+        admin: make_token_authorization_admin_config(),
+        storage_backend: StorageBackendConfig {
+            storage_type: KeyValueStorageType::LocalJson,
+            backends: KeyValueStorageStructConfig {
+                local_json: Some(local_json::Config {
+                    file_dir_path: "/opt/confidential-containers/trustee".into(),
+                }),
+                local_fs: None,
+                postgres: None,
+                redis: None,
+            },
         },
-        policy_engine: PolicyEngineConfig::default(),
+        session_storage_type: Some(KeyValueStorageType::Memory),
         plugins: Vec::new(),
     })]
     #[case("test_data/configs/coco-as-builtin-2.toml",         KbsConfig {
         attestation_token: AttestationTokenVerifierConfig {
             trusted_certs_paths: vec![],
-            insecure_key: false,
+            insecure_header_jwk: false,
             trusted_jwk_sets: vec![],
             extra_teekey_paths: vec![],
         },
@@ -319,14 +546,9 @@ mod tests {
         attestation_service: crate::attestation::config::AttestationConfig {
             attestation_service:
                 crate::attestation::config::AttestationServiceConfig::CoCoASBuiltIn(
-                    attestation_service::config::Config {
-                        work_dir: "/opt/confidential-containers/attestation-service".into(),
-                        rvps_config: RvpsConfig::BuiltIn(RvpsCrateConfig{
-                            storage: ReferenceValueStorageConfig::LocalFs(local_fs::Config{
-                                file_path: "/opt/confidential-containers/attestation-service/reference_values".into(),
-                            }),
-                            extractors: None,
-                        }),
+                    crate::attestation::coco::builtin::Config {
+                        storage_type: None,
+                        rvps_config: RvpsConfig::BuiltIn { extractors: None, storage_type: None },
                         attestation_token_broker: EarTokenConfiguration {
                             duration_min: 5,
                             ..Default::default()
@@ -338,23 +560,28 @@ mod tests {
         },
         http_server: HttpServerConfig {
             sockets: vec!["0.0.0.0:8080".parse().unwrap()],
-            private_key: None,
-            certificate: None,
             insecure_http: true,
             payload_request_size: DEFAULT_PAYLOAD_REQUEST_SIZE,
             worker_count: None,
+            tls: TlsConfig::default(),
         },
-        admin: AdminConfig {
-            admin_backend: AdminBackendType::InsecureAllowAll,
-            roles: Vec::new(),
+        admin: AdminConfig::InsecureAllowAll {},
+        storage_backend: StorageBackendConfig {
+            storage_type: KeyValueStorageType::Memory,
+            backends: KeyValueStorageStructConfig {
+                local_json: None,
+                local_fs: None,
+                postgres: None,
+                redis: None,
+            },
         },
-        policy_engine: PolicyEngineConfig::default(),
+        session_storage_type: Some(KeyValueStorageType::Memory),
         plugins: Vec::new(),
     })]
     #[case("test_data/configs/intel-ta-2.toml",         KbsConfig {
         attestation_token: AttestationTokenVerifierConfig {
             trusted_jwk_sets: vec!["https://portal.trustauthority.intel.com".into()],
-            insecure_key: false,
+            insecure_header_jwk: false,
             trusted_certs_paths: vec![],
             extra_teekey_paths: vec![],
         },
@@ -374,17 +601,14 @@ mod tests {
         },
         http_server: HttpServerConfig {
             sockets: vec!["0.0.0.0:8080".parse().unwrap()],
-            private_key: None,
-            certificate: None,
             insecure_http: true,
             payload_request_size: DEFAULT_PAYLOAD_REQUEST_SIZE,
             worker_count: None,
+            tls: TlsConfig::default(),
         },
-        admin: AdminConfig {
-            admin_backend: AdminBackendType::DenyAll,
-            roles: Vec::new(),
-        },
-        policy_engine: PolicyEngineConfig::default(),
+        admin: AdminConfig::DenyAll {},
+        storage_backend: StorageBackendConfig::default(),
+        session_storage_type: Some(KeyValueStorageType::Memory),
         plugins: Vec::new(),
     })]
     #[case("test_data/configs/coco-as-grpc-3.toml",         KbsConfig {
@@ -406,17 +630,15 @@ mod tests {
             insecure_http: true,
             ..Default::default()
         },
-        admin: AdminConfig {
-            admin_backend: AdminBackendType::DenyAll,
-            roles: Vec::new(),
-        },
-        policy_engine: PolicyEngineConfig::default(),
+        admin: AdminConfig::DenyAll {},
+        storage_backend: StorageBackendConfig::default(),
+        session_storage_type: None,
         plugins: Vec::new(),
     })]
     #[case("test_data/configs/intel-ta-3.toml",         KbsConfig {
         attestation_token: AttestationTokenVerifierConfig {
             trusted_jwk_sets: vec!["https://portal.trustauthority.intel.com".into()],
-            insecure_key: false,
+            insecure_header_jwk: false,
             trusted_certs_paths: vec![],
             extra_teekey_paths: vec![],
         },
@@ -438,17 +660,15 @@ mod tests {
             insecure_http: true,
             ..Default::default()
         },
-        admin: AdminConfig {
-            admin_backend: AdminBackendType::DenyAll,
-            roles: Vec::new(),
-        },
-        policy_engine: PolicyEngineConfig::default(),
+        admin: AdminConfig::DenyAll {},
+        storage_backend: StorageBackendConfig::default(),
+        session_storage_type: None,
         plugins: Vec::new(),
     })]
     #[case("test_data/configs/coco-as-builtin-3.toml",         KbsConfig {
         attestation_token: AttestationTokenVerifierConfig {
             trusted_certs_paths: vec![],
-            insecure_key: false,
+            insecure_header_jwk: false,
             trusted_jwk_sets: vec![],
             extra_teekey_paths: vec![],
         },
@@ -456,12 +676,11 @@ mod tests {
         attestation_service: crate::attestation::config::AttestationConfig {
             attestation_service:
                 crate::attestation::config::AttestationServiceConfig::CoCoASBuiltIn(
-                    attestation_service::config::Config {
-                        work_dir: "/opt/confidential-containers/attestation-service".into(),
-                        rvps_config: RvpsConfig::BuiltIn(RvpsCrateConfig::default()),
+                    crate::attestation::coco::builtin::Config {
+                        storage_type: None,
+                        rvps_config: RvpsConfig::BuiltIn { extractors: None, storage_type: None },
                         attestation_token_broker: EarTokenConfiguration {
                             duration_min: 5,
-                            policy_dir: "/opt/confidential-containers/attestation-service/ear-policies".into(),
                             ..Default::default()
                         },
                         verifier_config: None,
@@ -473,24 +692,107 @@ mod tests {
             insecure_http: true,
             ..Default::default()
         },
-        admin: AdminConfig {
-            admin_backend: AdminBackendType::Simple(SimpleAdminConfig {
-                personas: Vec::new(),
-            }),
-            roles: Vec::new(),
-        },
-        policy_engine: PolicyEngineConfig {
-            policy_path: "/opa/confidential-containers/kbs/policy.rego".into(),
-        },
-        plugins: vec![
-        PluginsConfig::ResourceStorage(RepositoryConfig::LocalFs(
-            LocalFsRepoDesc {
-                dir_path: "/opt/confidential-containers/kbs/repository".into(),
+        admin: make_token_authorization_admin_config_with_defaults(),
+        storage_backend: StorageBackendConfig {
+            storage_type: KeyValueStorageType::LocalJson,
+            backends: KeyValueStorageStructConfig {
+                    local_json: Some(local_json::Config {
+                    file_dir_path: "/opt/confidential-containers/trustee".into(),
+                }),
+                local_fs: None,
+                postgres: None,
+                redis: None,
             },
-        ))],
+        },
+        session_storage_type: None,
+        plugins: vec![
+            PluginsConfig::ResourceStorage(RepositoryConfig::KvStorage),
+        ],
     })]
     fn read_config(#[case] config_path: &str, #[case] expected: KbsConfig) {
         let config = KbsConfig::try_from(Path::new(config_path)).unwrap();
         assert_eq!(config, expected, "case {config_path}");
+    }
+
+    #[test]
+    fn config_load_error_includes_path_and_section_hint() {
+        let dir = tempfile::tempdir().expect("tempdir");
+        let path = dir.path().join("kbs.toml");
+        std::fs::write(
+            &path,
+            r#"
+[http_server]
+sockets = ["127.0.0.1:8080"]
+
+[admin]
+authorization_mode = "InsecureAllowAll"
+type = "Simple"
+"#,
+        )
+        .expect("write config");
+
+        let err = KbsConfig::try_from(path.as_path()).unwrap_err();
+        let message = format!("{err}");
+        assert!(message.contains("kbs.toml"), "expected path in: {message}");
+        assert!(
+            message.contains("key `admin`") || message.contains("admin"),
+            "expected admin key in: {message}"
+        );
+        assert!(
+            message.contains("#admin-api-configuration"),
+            "expected admin doc hint in: {message}"
+        );
+    }
+
+    #[test]
+    fn test_tls_profile_default() {
+        let config = HttpServerConfig::default();
+        assert_eq!(config.tls.profile, TlsProfile::Intermediate);
+    }
+
+    #[test]
+    fn test_tls_version_range_validation_error() {
+        let mut config = TlsConfig::default();
+        config.min_version = Some(TlsVersion::Tls13);
+        config.max_version = Some(TlsVersion::Tls12);
+
+        assert!(config.validate().is_err());
+    }
+
+    #[test]
+    fn test_tls_version_range_validation_ok() {
+        let mut config = TlsConfig::default();
+        config.min_version = Some(TlsVersion::Tls12);
+        config.max_version = Some(TlsVersion::Tls13);
+
+        assert!(config.validate().is_ok());
+    }
+
+    #[rstest]
+    #[case("test_data/configs/tls-profile-old.toml", TlsProfile::Old, None)]
+    #[case(
+        "test_data/configs/tls-profile-intermediate.toml",
+        TlsProfile::Intermediate,
+        None
+    )]
+    #[case("test_data/configs/tls-profile-modern.toml", TlsProfile::Modern, None)]
+    #[case(
+        "test_data/configs/tls-profile-custom.toml",
+        TlsProfile::Custom,
+        Some(TlsVersion::Tls13)
+    )]
+    #[case(
+        "test_data/configs/tls-profile-custom-pqc.toml",
+        TlsProfile::Custom,
+        Some(TlsVersion::Tls13)
+    )]
+    fn test_tls_config_files(
+        #[case] config_path: &str,
+        #[case] expected_profile: TlsProfile,
+        #[case] expected_min_version: Option<TlsVersion>,
+    ) {
+        let config = KbsConfig::try_from(Path::new(config_path)).unwrap();
+        assert_eq!(config.http_server.tls.profile, expected_profile);
+        assert_eq!(config.http_server.tls.min_version, expected_min_version);
     }
 }

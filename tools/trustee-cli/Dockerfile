@@ -1,6 +1,6 @@
-# rust:1.90.0
+# rust:1.93.0
 FROM --platform=${BUILDPLATFORM:-linux/amd64} \
-    docker.io/library/rust@sha256:e227f20ec42af3ea9a3c9c1dd1b2012aa15f12279b5e9d5fb890ca1c2bb5726c \
+    docker.io/library/rust@sha256:bbde3ca426faeebab3eb58b8005d3d6da70607817a14bb92a55c94611d4d905f \
     AS builder
 ARG ARCH=x86_64
 ARG ALIYUN=false
@@ -59,7 +59,6 @@ RUN apt-get update && \
     echo 'deb [arch=amd64 signed-by=/usr/share/keyrings/intel-sgx.gpg] https://download.01.org/intel-sgx/sgx_repo/ubuntu noble main' | tee /etc/apt/sources.list.d/intel-sgx.list && \
     apt-get update && \
     apt-get install -y --no-install-recommends \
-    libsgx-dcap-default-qpl \
     libsgx-dcap-quote-verify \
     libtss2-tctildr0 \
     libtss2-esys-3.0.2-0 ; \

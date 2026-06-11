@@ -5,32 +5,36 @@ use anyhow::{anyhow, bail};
 use intel_tee_quote_verification_rs::{
     quote3_error_t, sgx_ql_qv_result_t, sgx_ql_qv_supplemental_t, sgx_ql_request_policy_t,
     sgx_qv_set_enclave_load_policy, tee_get_supplemental_data_version_and_size,
-    tee_qv_get_collateral, tee_supp_data_descriptor_t, tee_verify_quote,
+    tee_supp_data_descriptor_t, tee_verify_quote,
 };
 use serde::{Deserialize, Serialize};
 use serde_json::{Map, Value};
-use std::env;
-use std::fs::File;
-use std::io::{ErrorKind, Write};
 use std::mem;
 use std::time::{Duration, SystemTime};
+use strum::Display;
 use tracing::{debug, warn};
 
 mod claims;
+pub(crate) mod collateral;
+pub(crate) mod collateral_service;
 mod error;
+pub(crate) mod pck;
+pub(crate) mod pcs;
+pub(crate) mod quote;
 
 const INTEL_PCS_URL: &str = "https://api.trustedservices.intel.com/sgx/certification/v4/";
 
-#[derive(Debug, Default, Deserialize, Clone, Serialize, PartialEq)]
+#[derive(Debug, Default, Deserialize, Clone, Serialize, PartialEq, Display)]
 #[serde(rename_all = "lowercase")]
-pub enum TcbUpdateType {
+#[strum(serialize_all = "lowercase")]
+pub(crate) enum TcbUpdateType {
     #[default]
     Early,
     Standard,
 }
 
 #[derive(Debug, Deserialize, Clone, Serialize, PartialEq)]
-pub struct QcnlConfig {
+pub(crate) struct QcnlConfig {
     collateral_service: String,
     #[serde(skip_serializing_if = "Option::is_none")]
     use_secure_cert: Option<bool>,
@@ -48,43 +52,23 @@ impl Default for QcnlConfig {
     }
 }
 
-pub fn set_qcnl_config(c: Option<QcnlConfig>) -> Result<(), std::io::Error> {
-    env::var("QCNL_CONF_PATH")
-        .map_err(std::io::Error::other)
-        .and_then(File::create_new)
-        .and_then(|mut f| {
-            f.write_all(
-                serde_json::to_string(&c.unwrap_or_default())
-                    .map_err(|_| std::io::Error::from(ErrorKind::InvalidInput))?
-                    .as_bytes(),
-            )
-        })
-        .inspect_err(|e| match e.kind() {
-            ErrorKind::Other => debug!(
-                "QCNL_CONF_PATH environment variable is not set so configuration was skipped."
-            ),
-            ErrorKind::AlreadyExists => debug!("DCAP QCNL is already configured."),
-            ErrorKind::PermissionDenied => {
-                warn!("DCAP QCNL configuration failed due to permission error.")
-            }
-            ErrorKind::InvalidInput => {
-                warn!("DCAP QCNL configuration failed due to invalid JSON.")
-            }
-            _ => warn!("DCAP QCNL configuration failed due to an unknown error."),
-        })
-        .inspect(|_| debug!("DCAP QCNL configuration was written to $QCNL_CONF_PATH."))
+impl QcnlConfig {
+    /// Build a [`pcs::Pcs`] collateral client from the configured `collateral_service` URL.
+    ///
+    /// A `file://` URL selects the offline file backend; any other URL selects
+    /// the PCS/PCCS HTTPS backend.
+    pub(crate) fn pcs(&self) -> Result<pcs::Pcs, pcs::PcsError> {
+        pcs::Pcs::new(self)
+    }
 }
 
-pub async fn ecdsa_quote_verification(quote: &[u8]) -> anyhow::Result<Map<String, Value>> {
-    let mut supp_data: sgx_ql_qv_supplemental_t = Default::default();
-    let mut supp_data_desc = tee_supp_data_descriptor_t {
-        major_version: 0,
-        data_size: 0,
-        p_data: &mut supp_data as *mut sgx_ql_qv_supplemental_t as *mut u8,
-    };
-
-    // Call DCAP quote verify library to set QvE loading policy to multi-thread
-    // We only need to set the policy once; otherwise, it will return the error code 0xe00c (SGX_QL_UNSUPPORTED_LOADING_POLICY)
+pub(crate) fn ecdsa_quote_verification(
+    quote: &[u8],
+    collateral: Option<intel_tee_quote_verification_rs::QuoteCollateral>,
+) -> anyhow::Result<Map<String, Value>> {
+    // Call DCAP quote verify library to set QvE loading policy to multi-thread.
+    // We only need to set the policy once; otherwise, it will return the error code
+    // 0xe00c (SGX_QL_UNSUPPORTED_LOADING_POLICY).
     static INIT: std::sync::Once = std::sync::Once::new();
     INIT.call_once(|| {
         match sgx_qv_set_enclave_load_policy(
@@ -100,37 +84,25 @@ pub async fn ecdsa_quote_verification(quote: &[u8]) -> anyhow::Result<Map<String
         }
     });
 
-    match tee_get_supplemental_data_version_and_size(quote) {
-        Ok((supp_ver, supp_size)) => {
-            if supp_size == mem::size_of::<sgx_ql_qv_supplemental_t>() as u32 {
-                debug!("tee_get_quote_supplemental_data_version_and_size successfully returned.");
-                debug!(
-                    "Info: latest supplemental data major version: {}, minor version: {}, size: {}",
-                    u16::from_be_bytes(supp_ver.to_be_bytes()[..2].try_into()?),
-                    u16::from_be_bytes(supp_ver.to_be_bytes()[2..].try_into()?),
-                    supp_size,
-                );
-                supp_data_desc.data_size = supp_size;
-            } else {
-                warn!("Quote supplemental data size is different between DCAP QVL and QvE, please make sure you installed DCAP QVL and QvE from same release.")
-            }
-        }
-        Err(e) => bail!(
-            "tee_get_quote_supplemental_data_size failed: {}",
+    let (_, supp_size) = tee_get_supplemental_data_version_and_size(quote).map_err(|e| {
+        anyhow!(
+            "tee_get_supplemental_data_version_and_size failed: {}",
             describe_error(e)
-        ),
+        )
+    })?;
+
+    let expected_size = mem::size_of::<sgx_ql_qv_supplemental_t>() as u32;
+    if supp_size != expected_size {
+        bail!(
+            "Supplemental data size mismatch: QVL returned {supp_size}, expected {expected_size}"
+        );
     }
 
-    // get collateral
-    let collateral = match tee_qv_get_collateral(quote) {
-        Ok(c) => {
-            debug!("tee_qv_get_collateral successfully returned.");
-            Some(c)
-        }
-        Err(e) => {
-            warn!("tee_qv_get_collateral failed: {}", describe_error(e));
-            None
-        }
+    let mut supp_data: sgx_ql_qv_supplemental_t = Default::default();
+    let mut supp_data_desc = tee_supp_data_descriptor_t {
+        major_version: 0,
+        data_size: supp_size,
+        p_data: std::ptr::from_mut(&mut supp_data).cast(),
     };
 
     // set current time. This is only for sample purposes, in production mode a trusted time should be used.
@@ -139,18 +111,13 @@ pub async fn ecdsa_quote_verification(quote: &[u8]) -> anyhow::Result<Map<String
         .unwrap_or(Duration::ZERO)
         .as_secs() as i64;
 
-    let p_supplemental_data = match supp_data_desc.data_size {
-        0 => None,
-        _ => Some(&mut supp_data_desc),
-    };
-
     // call DCAP quote verify library for quote verification
     let (collateral_expiration_status, quote_verification_result) = tee_verify_quote(
         quote,
         collateral.as_ref(),
         current_time,
         None,
-        p_supplemental_data,
+        Some(&mut supp_data_desc),
     )
     .map_err(|e| anyhow!("tee_verify_quote failed: {}", describe_error(e)))?;
 
@@ -181,7 +148,7 @@ pub async fn ecdsa_quote_verification(quote: &[u8]) -> anyhow::Result<Map<String
     }
 }
 
-pub fn extend_using_custom_claims(
+pub(crate) fn extend_using_custom_claims(
     claim: &mut TeeEvidenceParsedClaim,
     custom: Map<String, Value>,
 ) -> anyhow::Result<()> {

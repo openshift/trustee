@@ -2,14 +2,14 @@
 // Licensed under the Apache License, Version 2.0, see LICENSE for details.
 // SPDX-License-Identifier: Apache-2.0
 
-use jwk::JwkAttestationTokenVerifier;
 use kbs_types::TeePubKey;
 use serde::Deserialize;
 use serde_json::Value;
 use tracing::debug;
 
+use crate::crypto::jwt::JwtVerifier;
+
 mod error;
-pub(crate) mod jwk;
 pub use error::*;
 
 pub const TOKEN_TEE_PUBKEY_PATH_ITA: &str = "/tdx/attester_runtime_data/tee-pubkey";
@@ -44,38 +44,46 @@ pub struct AttestationTokenVerifierConfig {
     #[serde(default)]
     pub trusted_jwk_sets: Vec<String>,
 
-    /// Whether the token signing key is (not) validated.
-    /// If true, the attestation token can be modified in flight.
-    /// This should only be set to true for testing.
-    /// While the token signature is still validated, the provenance of the
-    /// signing key is not checked and the key could be replaced.
+    /// Whether to skip endorsement checks for a JWK embedded in the JWT header.
     ///
-    /// When false, the key must be endorsed by the certificates or JWK sets
-    /// specified above.
+    /// When false (default) and the token header carries a `jwk`, the key must be
+    /// backed by an `x5c` certificate chain that chains to [`trusted_certs_paths`].
+    /// When true, that `jwk` is used directly to verify the signature without
+    /// checking its provenance; the signature itself is still validated.
+    ///
+    /// This only affects header-embedded `jwk` keys. Tokens that identify the
+    /// signing key via `kid` are still resolved from [`trusted_jwk_sets`].
+    ///
+    /// Should only be set to true for testing: an attacker who can replace the
+    /// header `jwk` can make KBS accept tokens signed with an arbitrary key.
     ///
     /// Default: false
     #[serde(default = "bool::default")]
-    pub insecure_key: bool,
+    pub insecure_header_jwk: bool,
 }
 
 #[derive(Clone)]
 pub struct TokenVerifier {
-    verifier: JwkAttestationTokenVerifier,
+    verifier: JwtVerifier,
     extra_teekey_paths: Vec<String>,
 }
 
 impl TokenVerifier {
-    pub async fn verify(&self, token: String) -> Result<Value> {
+    pub fn verify(&self, token: String) -> Result<Value> {
         self.verifier
-            .verify(token)
-            .await
+            .verify(&token)
             .map_err(|e| Error::TokenVerificationFailed { source: e })
     }
 
     pub async fn from_config(config: AttestationTokenVerifierConfig) -> Result<Self> {
-        let verifier = JwkAttestationTokenVerifier::new(&config)
-            .await
-            .map_err(|e| Error::TokenVerifierInitialization { source: e })?;
+        let verifier = JwtVerifier::new(
+            &config.trusted_jwk_sets,
+            &config.trusted_certs_paths,
+            &Vec::new(),
+            config.insecure_header_jwk,
+        )
+        .await
+        .map_err(|e| Error::TokenVerifierInitialization { source: e })?;
 
         let mut extra_teekey_paths = config.extra_teekey_paths;
         extra_teekey_paths.push(TOKEN_TEE_PUBKEY_PATH_ITA.into());

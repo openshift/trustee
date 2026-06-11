@@ -1,0 +1,38 @@
+[http_server]
+sockets = ["127.0.0.1:8087"]
+private_key = "./work/https.key"
+certificate = "./work/https.crt"
+insecure_http = false
+
+[attestation_token]
+trusted_certs_paths = ["./work/ca-cert.pem"]
+
+[attestation_service]
+type = "coco_as_builtin"
+
+[attestation_service.attestation_token_broker]
+duration_min = 5
+
+[attestation_service.attestation_token_broker.signer]
+key_path = "./work/token.key"
+cert_path = "./work/token-cert-chain.pem"
+
+[attestation_service.rvps_config]
+type = "BuiltIn"
+
+[admin]
+authorization_mode = "AuthenticatedAuthorization"
+
+[admin.authentication.bearer_jwt]
+identity_providers = [
+  { issuer = "issuer", audience = "kbs", public_key_uri = "./work/kbs.pem" },
+]
+
+[admin.authorization.regex_acl]
+acls = [{ role = "admin", allowed_endpoints = "^/kbs/.+$" }]
+
+[[plugins]]
+name = "external"
+backends = [
+  { name = "echo-test", endpoint = "http://127.0.0.1:50051", timeout_ms = 5000 },
+]

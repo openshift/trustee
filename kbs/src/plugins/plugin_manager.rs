@@ -5,7 +5,8 @@
 use std::{collections::HashMap, fmt::Display, sync::Arc};
 
 use actix_web::http::Method;
-use anyhow::{Context, Error, Result};
+use anyhow::{Context, Result};
+use key_value_storage::StorageBackendConfig;
 use serde::Deserialize;
 
 use super::{sample, RepositoryConfig, ResourceStorage};
@@ -15,6 +16,9 @@ use super::{NebulaCaPlugin, NebulaCaPluginConfig};
 
 #[cfg(feature = "pkcs11")]
 use super::{Pkcs11Backend, Pkcs11Config};
+
+#[cfg(feature = "external-plugin")]
+use super::{ExternalPlugin, ExternalPluginConfig};
 
 type ClientPluginInstance = Arc<dyn ClientPlugin>;
 
@@ -73,6 +77,10 @@ pub enum PluginsConfig {
     #[cfg(feature = "pkcs11")]
     #[serde(alias = "pkcs11")]
     Pkcs11(Pkcs11Config),
+
+    #[cfg(feature = "external-plugin")]
+    #[serde(alias = "external")]
+    ExternalPlugin(ExternalPluginConfig),
 }
 
 impl Display for PluginsConfig {
@@ -84,14 +92,19 @@ impl Display for PluginsConfig {
             PluginsConfig::NebulaCaPlugin(_) => f.write_str("nebula-ca"),
             #[cfg(feature = "pkcs11")]
             PluginsConfig::Pkcs11(_) => f.write_str("pkcs11"),
+            #[cfg(feature = "external-plugin")]
+            PluginsConfig::ExternalPlugin(_) => f.write_str("external"),
         }
     }
 }
 
-impl TryInto<ClientPluginInstance> for PluginsConfig {
-    type Error = Error;
-
-    fn try_into(self) -> Result<ClientPluginInstance> {
+impl PluginsConfig {
+    /// Turn the PluginsConfig into a concrete plugin instance
+    /// If the plugin instance needs a backend storage, the storage_backend can be used.
+    pub async fn into_client_plugin_instance(
+        self,
+        storage_backend_config: &StorageBackendConfig,
+    ) -> Result<ClientPluginInstance> {
         let plugin = match self {
             PluginsConfig::Sample(cfg) => {
                 let sample_plugin =
@@ -99,8 +112,10 @@ impl TryInto<ClientPluginInstance> for PluginsConfig {
                 Arc::new(sample_plugin) as _
             }
             PluginsConfig::ResourceStorage(repository_config) => {
-                let resource_storage = ResourceStorage::try_from(repository_config)
-                    .context("Initialize 'Resource' plugin failed")?;
+                let resource_storage =
+                    ResourceStorage::new(repository_config, storage_backend_config)
+                        .await
+                        .context("Initialize 'Resource' plugin failed")?;
                 Arc::new(resource_storage) as _
             }
             #[cfg(feature = "nebula-ca-plugin")]
@@ -115,6 +130,13 @@ impl TryInto<ClientPluginInstance> for PluginsConfig {
                     .context("Initialize 'pkcs11' plugin failed")?;
                 Arc::new(pkcs11) as _
             }
+            #[cfg(feature = "external-plugin")]
+            PluginsConfig::ExternalPlugin(ext_config) => {
+                let external_plugin = ExternalPlugin::new(ext_config)
+                    .await
+                    .context("Initialize 'external' plugin failed")?;
+                Arc::new(external_plugin) as _
+            }
         };
 
         Ok(plugin)
@@ -127,18 +149,21 @@ pub struct PluginManager {
     plugins: HashMap<String, ClientPluginInstance>,
 }
 
-impl TryFrom<Vec<PluginsConfig>> for PluginManager {
-    type Error = Error;
-
-    fn try_from(value: Vec<PluginsConfig>) -> Result<Self> {
-        let plugins = value
-            .into_iter()
-            .map(|cfg| {
-                let name = cfg.to_string();
-                let plugin: ClientPluginInstance = cfg.try_into()?;
-                Ok((name, plugin))
-            })
-            .collect::<Result<HashMap<String, ClientPluginInstance>>>()?;
+impl PluginManager {
+    /// Turn the PluginsConfig into a concrete plugin instance
+    /// If the plugin instance needs a backend storage, the storage_type and storage_config can be used.
+    pub async fn new(
+        value: Vec<PluginsConfig>,
+        storage_backend_config: &StorageBackendConfig,
+    ) -> Result<Self> {
+        let mut plugins = HashMap::new();
+        for cfg in value {
+            let name = cfg.to_string();
+            let plugin: ClientPluginInstance = cfg
+                .into_client_plugin_instance(storage_backend_config)
+                .await?;
+            plugins.insert(name, plugin);
+        }
         Ok(Self { plugins })
     }
 }

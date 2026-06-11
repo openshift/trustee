@@ -8,14 +8,18 @@ edition.workspace = true
 
 [dependencies]
 kbs = { path = "../kbs" }
+key-value-storage = { path = "../deps/key-value-storage" }
+policy-engine = { path = "../deps/policy-engine" }
 reference-value-provider-service = { path = "../rvps" }
 
 actix-web.workspace = true
 anyhow.workspace = true
 base64.workspace = true
+const_format.workspace = true
 openssl.workspace = true
 rstest.workspace = true
 serde_json.workspace = true
+jsonwebtoken.workspace = true
 serial_test.workspace = true
 sha2.workspace = true
 tempfile.workspace = true

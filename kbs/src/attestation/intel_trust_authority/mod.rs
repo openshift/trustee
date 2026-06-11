@@ -3,8 +3,11 @@
 // SPDX-License-Identifier: Apache-2.0
 
 use crate::{
-    attestation::backend::{generic_generate_challenge, make_nonce, Attest, IndependentEvidence},
-    token::{jwk::JwkAttestationTokenVerifier, AttestationTokenVerifierConfig},
+    attestation::{
+        backend::{generic_generate_challenge, make_nonce, Attest, IndependentEvidence},
+        SELECTED_HASH_ALGORITHM_JSON_KEY, SUPPORTED_HASH_ALGORITHMS_JSON_KEY,
+    },
+    crypto::jwt::JwtVerifier,
 };
 use anyhow::*;
 use async_trait::async_trait;
@@ -20,9 +23,6 @@ use serde_with::serde_as;
 use sha2::{Digest, Sha512};
 use std::result::Result::Ok;
 use tracing::{debug, info, warn};
-
-const SUPPORTED_HASH_ALGORITHMS_JSON_KEY: &str = "supported-hash-algorithms";
-const SELECTED_HASH_ALGORITHM_JSON_KEY: &str = "selected-hash-algorithm";
 
 const ERR_NO_TEE_ALGOS: &str = "ITA: TEE does not support any hash algorithms";
 const ERR_INVALID_TEE: &str = "ITA: Unknown TEE specified";
@@ -104,6 +104,22 @@ struct NvDeviceReportAndCert {
     arch: String,
 }
 
+/// ITA Nvidia GPU attestation request body.
+///
+/// ITA accepts `evidence_list` for both single and multi-GPU attestation.
+#[derive(Serialize, Debug)]
+struct NvGpuRequest {
+    gpu_nonce: String,
+    arch: String,
+    evidence_list: Vec<NvGpuEvidenceItem>,
+}
+
+#[derive(Serialize, Debug)]
+struct NvGpuEvidenceItem {
+    evidence: String,
+    certificate: String,
+}
+
 #[derive(Serialize, Debug)]
 struct AttestReqData {
     policy_ids: Vec<String>,
@@ -113,7 +129,7 @@ struct AttestReqData {
     #[serde(skip_serializing_if = "Option::is_none")]
     sgx: Option<DcapTeeEvidence>,
     #[serde(skip_serializing_if = "Option::is_none")]
-    nvgpu: Option<NvDeviceReportAndCert>,
+    nvgpu: Option<NvGpuRequest>,
 }
 
 #[derive(Deserialize, Debug)]
@@ -140,113 +156,155 @@ pub struct IntelTrustAuthorityConfig {
 
 pub struct IntelTrustAuthority {
     config: IntelTrustAuthorityConfig,
-    token_verifier: JwkAttestationTokenVerifier,
+    token_verifier: JwtVerifier,
+}
+
+/// Build the ITA attestation request from a list of independent evidences.
+///
+/// Returns the populated request data and a URL suffix to append after [`BASE_AS_ADDR`]
+/// (e.g. [`AZURE_ADDR_SUFFIX`] for Azure TDX, or an empty string otherwise).
+fn build_attest_request(
+    evidence_to_verify: Vec<IndependentEvidence>,
+    policy_ids: Vec<String>,
+    policy_must_match: bool,
+) -> Result<(AttestReqData, String)> {
+    let mut request_data = AttestReqData {
+        policy_ids,
+        policy_must_match,
+        tdx: None,
+        sgx: None,
+        nvgpu: None,
+    };
+
+    let mut url_suffix = String::new();
+
+    for independent_evidence in evidence_to_verify {
+        match independent_evidence.tee {
+            Tee::AzTdxVtpm => {
+                url_suffix = AZURE_ADDR_SUFFIX.to_string();
+
+                let evidence = from_value::<AzItaTeeEvidence>(independent_evidence.tee_evidence)
+                    .context(format!(
+                        "Failed to deserialize TEE: {:?} Evidence",
+                        independent_evidence.tee
+                    ))?;
+
+                let hcl_report = HclReport::new(evidence.hcl_report().clone())?;
+
+                request_data.tdx = Some(DcapTeeEvidence {
+                    quote: STANDARD.encode(evidence.td_quote()),
+                    runtime_data: STANDARD.encode(hcl_report.var_data()),
+                    user_data: Some(STANDARD.encode(independent_evidence.runtime_data.to_string())),
+                    event_log: None,
+                });
+            }
+            Tee::Tdx => {
+                let mut evidence = from_value::<DcapTeeEvidence>(independent_evidence.tee_evidence)
+                    .context(format!(
+                        "Failed to deserialize TEE: {:?} Evidence",
+                        independent_evidence.tee
+                    ))?;
+
+                evidence.runtime_data =
+                    STANDARD.encode(independent_evidence.runtime_data.to_string());
+
+                request_data.tdx = Some(evidence);
+            }
+            Tee::Sgx => {
+                let mut evidence = from_value::<DcapTeeEvidence>(independent_evidence.tee_evidence)
+                    .context(format!(
+                        "Failed to deserialize TEE: {:?} Evidence",
+                        independent_evidence.tee
+                    ))?;
+
+                evidence.runtime_data =
+                    STANDARD.encode(independent_evidence.runtime_data.to_string());
+
+                request_data.sgx = Some(evidence);
+            }
+            Tee::Nvidia => {
+                let evidence = from_value::<NvDeviceEvidence>(independent_evidence.tee_evidence)
+                    .context(format!(
+                        "Failed to deserialize TEE: {:?} Evidence",
+                        independent_evidence.tee
+                    ))?;
+
+                if evidence.device_evidence_list.is_empty() {
+                    warn!(
+                        "TEE {:?} evidence has empty device list. Drop the evidence.",
+                        independent_evidence.tee
+                    );
+                    continue;
+                }
+
+                // Filter out unsupported archs (e.g. LS10 NVSwitch) — ITA only accepts
+                // HOPPER and BLACKWELL GPUs.
+                let devices: Vec<_> = evidence
+                    .device_evidence_list
+                    .into_iter()
+                    .filter(|d| {
+                        let ok = d.arch == "HOPPER" || d.arch == "BLACKWELL";
+                        if !ok {
+                            warn!(
+                                "ITA: unsupported Nvidia device arch {:?}, skipping it",
+                                d.arch
+                            );
+                        }
+                        ok
+                    })
+                    .collect();
+
+                if devices.is_empty() {
+                    warn!(
+                        "ITA: no supported Nvidia GPU devices after filtering, dropping evidence"
+                    );
+                    continue;
+                }
+
+                let runtime_data_hash =
+                    Sha512::digest(independent_evidence.runtime_data.to_string()).to_vec();
+                let gpu_nonce = hex::encode(&runtime_data_hash[0..32]);
+                let arch = devices[0].arch.clone();
+
+                request_data.nvgpu = Some(NvGpuRequest {
+                    gpu_nonce,
+                    arch,
+                    evidence_list: devices
+                        .into_iter()
+                        .map(|d| NvGpuEvidenceItem {
+                            evidence: d.evidence,
+                            certificate: d.certificate,
+                        })
+                        .collect(),
+                });
+            }
+            _ => {
+                bail!(
+                    "Intel Trust Authority: TEE {0:?} is not supported.",
+                    independent_evidence.tee
+                );
+            }
+        };
+    }
+
+    Ok((request_data, url_suffix))
 }
 
 #[async_trait]
 impl Attest for IntelTrustAuthority {
     async fn verify(&self, evidence_to_verify: Vec<IndependentEvidence>) -> anyhow::Result<String> {
         let policy_ids = self.config.policy_ids.clone();
-
         let policy_must_match = match policy_ids.is_empty() {
             true => false,
             false => !self.config.allow_unmatched_policy.unwrap_or_default(),
         };
 
-        let mut req_data = AttestReqData {
-            policy_ids,
-            policy_must_match,
-            tdx: None,
-            sgx: None,
-            nvgpu: None,
-        };
+        let (request_data, url_suffix) =
+            build_attest_request(evidence_to_verify, policy_ids, policy_must_match)?;
 
-        let mut att_url = format!("{}{BASE_AS_ADDR}", &self.config.base_url);
+        let att_url = format!("{}{BASE_AS_ADDR}{url_suffix}", &self.config.base_url);
 
-        for independent_evidence in evidence_to_verify {
-            match independent_evidence.tee {
-                Tee::AzTdxVtpm => {
-                    att_url = format!("{att_url}{AZURE_ADDR_SUFFIX}");
-
-                    let evidence =
-                        from_value::<AzItaTeeEvidence>(independent_evidence.tee_evidence.clone())
-                            .context(format!(
-                            "Failed to deserialize TEE: {:?} Evidence",
-                            independent_evidence.tee
-                        ))?;
-
-                    let hcl_report = HclReport::new(evidence.hcl_report().clone())?;
-
-                    req_data.tdx = Some(DcapTeeEvidence {
-                        quote: STANDARD.encode(evidence.td_quote()),
-                        runtime_data: STANDARD.encode(hcl_report.var_data()),
-                        user_data: Some(
-                            STANDARD.encode(independent_evidence.runtime_data.to_string()),
-                        ),
-                        event_log: None,
-                    });
-                }
-                Tee::Tdx => {
-                    let mut evidence =
-                        from_value::<DcapTeeEvidence>(independent_evidence.tee_evidence.clone())
-                            .context(format!(
-                                "Failed to deserialize TEE: {:?} Evidence",
-                                independent_evidence.tee
-                            ))?;
-
-                    evidence.runtime_data =
-                        STANDARD.encode(independent_evidence.runtime_data.to_string());
-
-                    req_data.tdx = Some(evidence);
-                }
-                Tee::Sgx => {
-                    let mut evidence =
-                        from_value::<DcapTeeEvidence>(independent_evidence.tee_evidence.clone())
-                            .context(format!(
-                                "Failed to deserialize TEE: {:?} Evidence",
-                                independent_evidence.tee
-                            ))?;
-
-                    evidence.runtime_data =
-                        STANDARD.encode(independent_evidence.runtime_data.to_string());
-
-                    req_data.sgx = Some(evidence);
-                }
-                Tee::Nvidia => {
-                    let evidence =
-                        from_value::<NvDeviceEvidence>(independent_evidence.tee_evidence.clone())
-                            .context(format!(
-                            "Failed to deserialize TEE: {:?} Evidence",
-                            independent_evidence.tee
-                        ))?;
-
-                    if evidence.device_evidence_list.is_empty() {
-                        warn!(
-                            "TEE {:?} evidence has empty device list. Drop the evidence.",
-                            independent_evidence.tee
-                        );
-                        continue;
-                    }
-
-                    // only one GPU supported at the moment
-                    let mut nvgpu = evidence.device_evidence_list[0].clone();
-
-                    let runtime_data_hash =
-                        Sha512::digest(independent_evidence.runtime_data.to_string()).to_vec();
-                    nvgpu.gpu_nonce = hex::encode(&runtime_data_hash[0..32]);
-
-                    req_data.nvgpu = Some(nvgpu);
-                }
-                _ => {
-                    bail!(
-                        "Intel Trust Authority: TEE {0:?} is not supported.",
-                        independent_evidence.tee
-                    );
-                }
-            };
-        }
-
-        let attest_req_body = serde_json::to_string(&req_data)
+        let attest_req_body = serde_json::to_string(&request_data)
             .context("Failed to serialize attestation request body")?;
 
         // send attest request
@@ -295,8 +353,7 @@ impl Attest for IntelTrustAuthority {
 
         let _token = self
             .token_verifier
-            .verify(resp_data.token.clone())
-            .await
+            .verify(&resp_data.token)
             .context("Failed to verify attestation token")?;
 
         Ok(resp_data.token.clone())
@@ -384,12 +441,15 @@ impl Attest for IntelTrustAuthority {
 
 impl IntelTrustAuthority {
     pub async fn new(config: IntelTrustAuthorityConfig) -> Result<Self> {
-        let token_verifier = JwkAttestationTokenVerifier::new(&AttestationTokenVerifierConfig {
-            extra_teekey_paths: vec![],
-            trusted_certs_paths: vec![],
-            trusted_jwk_sets: vec![config.certs_file.clone()],
-            insecure_key: true,
-        })
+        let trusted_jwk_sets = vec![config.certs_file.clone()];
+        let trusted_certs_paths: Vec<String> = Vec::new();
+        let trusted_pem_public_keys = Vec::new();
+        let token_verifier = JwtVerifier::new(
+            &trusted_jwk_sets,
+            &trusted_certs_paths,
+            &trusted_pem_public_keys,
+            true,
+        )
         .await
         .context("Failed to initialize token verifier")?;
 

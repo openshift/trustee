@@ -4,19 +4,26 @@
 
 use std::sync::{Arc, OnceLock};
 
-use anyhow::{bail, Context, Error, Result};
+use anyhow::{bail, Error, Result};
+use key_value_storage::StorageBackendConfig;
 use regex::Regex;
 use serde::Deserialize;
 use std::fmt;
 
-use crate::prometheus::{RESOURCE_READS_TOTAL, RESOURCE_WRITES_TOTAL};
+use crate::{
+    plugins::resource::kv_storage,
+    prometheus::{RESOURCE_DELETES_TOTAL, RESOURCE_READS_TOTAL, RESOURCE_WRITES_TOTAL},
+};
 
-use super::local_fs;
+#[cfg(feature = "aws")]
+use super::aws_kms;
 
 #[cfg(feature = "vault")]
 use super::vault_kv;
 
 type RepositoryInstance = Arc<dyn StorageBackend>;
+
+pub const RESOURCE_STORAGE_NAMESPACE: &str = "repository";
 
 /// Interface of a `Repository`.
 #[async_trait::async_trait]
@@ -26,6 +33,9 @@ pub trait StorageBackend: Send + Sync {
 
     /// Write secret resource into repository
     async fn write_secret_resource(&self, resource_desc: ResourceDesc, data: &[u8]) -> Result<()>;
+
+    /// Delete secret resource from repository
+    async fn delete_secret_resource(&self, resource_desc: ResourceDesc) -> Result<()>;
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -69,24 +79,24 @@ impl fmt::Display for ResourceDesc {
     }
 }
 
-#[derive(Clone, Debug, Deserialize, PartialEq)]
-#[serde(tag = "type")]
+#[derive(Clone, Debug, Deserialize, PartialEq, Default)]
+#[serde(tag = "storage_backend_type")]
 pub enum RepositoryConfig {
-    LocalFs(local_fs::LocalFsRepoDesc),
+    #[serde(alias = "kvstorage")]
+    #[default]
+    KvStorage,
 
     #[cfg(feature = "aliyun")]
     #[serde(alias = "aliyun")]
     Aliyun(super::aliyun_kms::AliyunKmsBackendConfig),
 
+    #[cfg(feature = "aws")]
+    #[serde(alias = "aws")]
+    Aws(aws_kms::AwsKmsBackendConfig),
+
     #[cfg(feature = "vault")]
     #[serde(alias = "vault")]
     Vault(vault_kv::VaultKvBackendConfig),
-}
-
-impl Default for RepositoryConfig {
-    fn default() -> Self {
-        Self::LocalFs(local_fs::LocalFsRepoDesc::default())
-    }
 }
 
 #[derive(Clone)]
@@ -94,14 +104,21 @@ pub struct ResourceStorage {
     backend: RepositoryInstance,
 }
 
-impl TryFrom<RepositoryConfig> for ResourceStorage {
-    type Error = Error;
-
-    fn try_from(value: RepositoryConfig) -> Result<Self> {
+impl ResourceStorage {
+    pub async fn new(
+        value: RepositoryConfig,
+        storage_backend_config: &StorageBackendConfig,
+    ) -> Result<Self> {
         match value {
-            RepositoryConfig::LocalFs(desc) => {
-                let backend = local_fs::LocalFs::new(&desc)
-                    .context("Failed to initialize Resource Storage")?;
+            RepositoryConfig::KvStorage => {
+                let storage = storage_backend_config
+                    .backends
+                    .to_client_with_namespace(
+                        storage_backend_config.storage_type,
+                        RESOURCE_STORAGE_NAMESPACE,
+                    )
+                    .await?;
+                let backend = kv_storage::KvStorage::new(storage);
                 Ok(Self {
                     backend: Arc::new(backend),
                 })
@@ -109,6 +126,13 @@ impl TryFrom<RepositoryConfig> for ResourceStorage {
             #[cfg(feature = "aliyun")]
             RepositoryConfig::Aliyun(config) => {
                 let client = super::aliyun_kms::AliyunKmsBackend::new(&config)?;
+                Ok(Self {
+                    backend: Arc::new(client),
+                })
+            }
+            #[cfg(feature = "aws")]
+            RepositoryConfig::Aws(config) => {
+                let client = aws_kms::AwsKmsBackend::new(&config).await?;
                 Ok(Self {
                     backend: Arc::new(client),
                 })
@@ -136,6 +160,13 @@ impl ResourceStorage {
         self.backend
             .write_secret_resource(resource_desc, data)
             .await
+    }
+
+    pub(crate) async fn delete_secret_resource(&self, resource_desc: ResourceDesc) -> Result<()> {
+        RESOURCE_DELETES_TOTAL
+            .with_label_values(&[&format!("{}", resource_desc)])
+            .inc();
+        self.backend.delete_secret_resource(resource_desc).await
     }
 
     pub(crate) async fn get_secret_resource(&self, resource_desc: ResourceDesc) -> Result<Vec<u8>> {

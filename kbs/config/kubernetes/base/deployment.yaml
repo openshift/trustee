@@ -12,19 +12,6 @@ spec:
       labels:
         app: kbs
     spec:
-      initContainers:
-      - command:
-        - sh
-        - -c
-        - cp -r /config/$(dirname $(readlink /config/policy.rego))/* /opt/confidential-containers/kbs/
-        image: quay.io/prometheus/busybox:latest
-        imagePullPolicy: Always
-        name: copy-config
-        volumeMounts:
-        - mountPath: /config
-          name: config-volume
-        - mountPath: /opt/confidential-containers/kbs
-          name: policy-volume
       containers:
       - name: kbs
         image: kbs-container-image
@@ -35,9 +22,6 @@ spec:
         - /usr/local/bin/kbs
         - --config-file
         - /etc/kbs/kbs-config.toml
-        env:
-        - name: QCNL_CONF_PATH
-          value: "/run/dcap/qcnl.conf"
         volumeMounts:
         - name: kbs-auth-public-key
           mountPath: /kbs/
@@ -45,12 +29,7 @@ spec:
           mountPath: /etc/kbs/
         - name: policy-volume
           mountPath: /opt/confidential-containers/kbs/
-        - name: dcap-qcnl-config
-          mountPath: /run/dcap/
       volumes:
-      - name: dcap-qcnl-config
-        emptyDir:
-          sizeLimit: 1Mi
       - name: kbs-auth-public-key
         secret:
           secretName: kbs-auth-public-key
@@ -59,6 +38,3 @@ spec:
           name: kbs-config
       - name: policy-volume
         emptyDir: {}
-      - name: config-volume
-        configMap:
-          name: policy-config

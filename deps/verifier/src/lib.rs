@@ -39,12 +39,8 @@ pub mod se;
 #[cfg(feature = "nvidia-verifier")]
 pub mod nvidia;
 
-#[cfg(any(
-    feature = "az-tdx-vtpm-verifier",
-    feature = "tdx-verifier",
-    feature = "sgx-verifier"
-))]
-pub mod intel_dcap;
+#[cfg(any(feature = "tdx-verifier", feature = "sgx-verifier"))]
+pub(crate) mod intel_dcap;
 
 #[cfg(feature = "tpm-verifier")]
 pub mod tpm;
@@ -55,7 +51,7 @@ pub struct VerifierConfig {
     nvidia_verifier: Option<nvidia::NvidiaVerifierConfig>,
 
     #[cfg(feature = "tpm-verifier")]
-    tpm_verifier: Option<tpm::config::TpmVerifierConfig>,
+    tpm_verifier: Option<tpm::TpmVerifierConfig>,
 
     #[cfg(feature = "snp-verifier")]
     snp_verifier: Option<snp::SnpVerifierConfig>,
@@ -73,7 +69,6 @@ pub async fn to_verifier(
     _config: Option<VerifierConfig>,
 ) -> Result<Box<dyn Verifier + Send + Sync>> {
     match tee {
-        Tee::Sev => todo!(),
         Tee::AzSnpVtpm => {
             cfg_if::cfg_if! {
                 if #[cfg(feature = "az-snp-vtpm-verifier")] {
@@ -87,9 +82,8 @@ pub async fn to_verifier(
         Tee::AzTdxVtpm => {
             cfg_if::cfg_if! {
                 if #[cfg(feature = "az-tdx-vtpm-verifier")] {
-                    // Write custom QCNL configuration file if $QCNL_CONF_PATH is set.
-                    let _ = intel_dcap::set_qcnl_config(_config.map(|c| c.dcap_verifier).unwrap_or(None));
-                    Ok(Box::<az_tdx_vtpm::AzTdxVtpm>::default() as Box<dyn Verifier + Send + Sync>)
+                    let dcap_config = _config.and_then(|c| c.dcap_verifier);
+                    Ok(Box::new(az_tdx_vtpm::AzTdxVtpm::new(dcap_config)) as Box<dyn Verifier + Send + Sync>)
                 } else {
                     bail!("feature `az-tdx-vtpm-verifier` is not enabled for `verifier` crate.");
                 }
@@ -98,9 +92,8 @@ pub async fn to_verifier(
         Tee::Tdx => {
             cfg_if::cfg_if! {
                 if #[cfg(feature = "tdx-verifier")] {
-                    // Write custom QCNL configuration file if $QCNL_CONF_PATH is set.
-                    let _ = intel_dcap::set_qcnl_config(_config.map(|c| c.dcap_verifier).unwrap_or(None));
-                    Ok(Box::<tdx::Tdx>::default() as Box<dyn Verifier + Send + Sync>)
+                    let dcap_config = _config.and_then(|c| c.dcap_verifier);
+                    Ok(Box::new(tdx::Tdx::new(dcap_config)) as Box<dyn Verifier + Send + Sync>)
                 } else {
                     bail!("feature `tdx-verifier` is not enabled for `verifier` crate.")
                 }
@@ -122,9 +115,8 @@ pub async fn to_verifier(
         Tee::Sgx => {
             cfg_if::cfg_if! {
                 if #[cfg(feature = "sgx-verifier")] {
-                    // Write custom QCNL configuration file if $QCNL_CONF_PATH is set.
-                    let _ = intel_dcap::set_qcnl_config(_config.map(|c| c.dcap_verifier).unwrap_or(None));
-                    Ok(Box::<sgx::SgxVerifier>::default() as Box<dyn Verifier + Send + Sync>)
+                    let dcap_config = _config.and_then(|c| c.dcap_verifier);
+                    Ok(Box::new(sgx::SgxVerifier::new(dcap_config)) as Box<dyn Verifier + Send + Sync>)
                 } else {
                     bail!("feature `sgx-verifier` is not enabled for `verifier` crate.")
                 }
@@ -185,8 +177,7 @@ pub async fn to_verifier(
         Tee::Tpm => {
             cfg_if::cfg_if! {
                 if #[cfg(feature = "tpm-verifier")] {
-                    let tpm_config = _config.map(|c| c.tpm_verifier).unwrap_or(None);
-                    Ok(Box::new(tpm::TpmVerifier::new(tpm_config)?) as Box<dyn Verifier + Send + Sync>)
+                    Ok(Box::<tpm::TpmVerifier>::default() as Box<dyn Verifier + Send + Sync>)
                 } else {
                     bail!("feature `tpm-verifier` is not enabled for `verifier` crate.")
                 }
@@ -207,6 +198,20 @@ pub enum ReportData<'a> {
 pub enum InitDataHash<'a> {
     Value(&'a [u8]),
     NotProvided,
+}
+
+/// Trait for converting types to hex strings
+pub trait ToHex {
+    fn to_hex(&self) -> String;
+}
+
+impl ToHex for ReportData<'_> {
+    fn to_hex(&self) -> String {
+        match self {
+            ReportData::Value(bytes) => hex::encode(bytes),
+            ReportData::NotProvided => String::new(),
+        }
+    }
 }
 
 #[async_trait]

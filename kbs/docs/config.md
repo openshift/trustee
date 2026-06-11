@@ -27,6 +27,78 @@ The following properties can be set under the `[http_server]` section.
 | `certificate`          | String       | Path to a certificate file to be used for HTTPS. | No       | None                     |
 | `payload_request_size` | Integer      | Request payload size in mega bytes.              | No       | 2                        |
 | `worker_count`         | Integer      | Number of HTTP actix worker threads              | No       | Num of logical CPU cores |
+| `tls_profile`          | String       | TLS security profile (see [TLS Configuration](#tls-configuration)) | No | `intermediate` |
+| `tls_min_version`      | String       | Minimum TLS version: `1.2` or `1.3`              | No       | Profile-dependent        |
+| `tls_max_version`      | String       | Maximum TLS version: `1.2` or `1.3`              | No       | Profile-dependent        |
+| `tls_ciphers`          | String       | TLS cipher suites (colon-separated OpenSSL list) | No       | Profile-dependent        |
+| `tls_groups`           | String       | TLS key exchange groups (colon-separated list)   | No       | Auto-detected with PQC   |
+
+#### TLS Configuration
+
+KBS supports flexible TLS configuration through predefined security profiles and custom settings. The TLS profiles are based on [Mozilla's TLS recommendations](https://wiki.mozilla.org/Security/Server_Side_TLS).
+
+##### TLS Security Profiles
+
+Four security profiles are available via the `tls_profile` setting:
+
+| Profile         | TLS Versions | Description                                              | Use Case                          |
+|-----------------|--------------|----------------------------------------------------------|-----------------------------------|
+| `old`           | 1.2, 1.3     | Legacy compatibility with older clients                  | Maximum client compatibility      |
+| `intermediate`  | 1.2, 1.3     | Balanced security and compatibility (recommended)        | Most production deployments       |
+| `modern`        | 1.3 only     | Maximum security, TLS 1.3 only                           | High-security environments        |
+| `custom`        | Configurable | Full control over TLS parameters                         | Specialized security requirements |
+
+**Recommended:** Use `intermediate` (the default) for most deployments unless you have specific security or compatibility requirements.
+
+##### Custom TLS Configuration
+
+When using `tls_profile = "custom"`, you can explicitly configure:
+
+- **`tls_min_version`**: Minimum TLS protocol version (`"1.2"` or `"1.3"`)
+- **`tls_max_version`**: Maximum TLS protocol version (`"1.2"` or `"1.3"`)
+- **`tls_ciphers`**: Colon-separated OpenSSL cipher suite list
+  - For TLS 1.3 only (Modern profile or min=1.3): Use TLS 1.3 cipher names
+    - Example: `TLS_AES_256_GCM_SHA384:TLS_CHACHA20_POLY1305_SHA256:TLS_AES_128_GCM_SHA256`
+    - TLS 1.3 cipher suites only specify encryption and hashing
+  - For TLS 1.2 only (max=1.2): Use TLS 1.2 cipher names
+    - Example: `ECDHE-RSA-AES256-GCM-SHA384:ECDHE-ECDSA-AES256-GCM-SHA384`
+    - TLS 1.2 cipher suites include key exchange, authentication, encryption, and hashing
+  - For both TLS 1.2 and 1.3 (Old/Intermediate): You can mix both formats in one string, separated by colons
+- **`tls_groups`**: Colon-separated list of supported groups for key exchange (applies to both TLS 1.2 and 1.3)
+  - For TLS 1.2: Configures elliptic curves for ECDHE cipher suites
+  - For TLS 1.3: Configures all key exchange (the only mechanism since cipher suites don't include it)
+  - Common classical groups: `X25519`, `X448`, `secp256r1` (P-256), `secp384r1` (P-384), `secp521r1` (P-521)
+  - PQC hybrid groups (OpenSSL 3.5+): `X25519MLKEM768`, `SecP256r1MLKEM768`, `X448MLKEM1024`, `SecP384r1MLKEM1024`
+  - Example: `X25519:secp256r1:secp384r1` (classical only)
+  - Example: `X25519MLKEM768:X25519:secp256r1` (post-quantum with classical fallback)
+  - See [OpenSSL groups documentation](https://www.openssl.org/docs/man3.0/man3/SSL_CTX_set1_groups_list.html) for complete list
+
+> [!NOTE]
+> Custom TLS fields can be used with any profile to override specific settings. If you set custom fields with a non-custom profile, a warning will be logged, but the custom settings will take precedence.
+
+##### Post-Quantum Cryptography (PQC) Support
+
+KBS automatically detects and enables post-quantum key exchange algorithms when supported by your OpenSSL installation (3.5+). If `tls_groups` is not explicitly configured, KBS will:
+
+1. Detect the best available PQC algorithm (ML-KEM hybrid groups)
+2. Fall back to classical algorithms if PQC is unavailable
+3. Use the following priority order:
+   - `X25519MLKEM768` (preferred)
+   - `SecP256r1MLKEM768` (FIPS-compliant)
+   - `X448MLKEM1024` (high security)
+   - `SecP384r1MLKEM1024` (FIPS + high security)
+
+To explicitly configure PQC, use the `custom` profile with `tls_groups`:
+
+```toml
+[http_server]
+tls_profile = "custom"
+tls_min_version = "1.3"
+tls_max_version = "1.3"
+tls_groups = "X25519MLKEM768:X25519:secp256r1"
+```
+
+See the [TLS Configuration Examples](#tls-configuration-examples) section for complete examples.
 
 ### Attestation Token Configuration
 
@@ -38,10 +110,10 @@ The following properties can be set under the `[attestation_token]` section.
 
 | Property              | Type         | Description                                                                                                                       | Default |
 |-----------------------|--------------|-----------------------------------------------------------------------------------------------------------------------------------|---------|
-| `trusted_jwk_sets`    | String Array | Valid Url (`file://` or `https://`) pointing to trusted JWKSets (local or OpenID) for Attestation Tokens trustworthy verification | Empty   |
+| `trusted_jwk_sets`    | String Array | Trusted JWKS/OpenID sources (`file://` or `https://`) used to verify attestation tokens                                         | Empty   |
 | `trusted_certs_paths` | String Array | Trusted Certificates file (PEM format) for Attestation Tokens trustworthy verification                                            | Empty   |
 | `extra_teekey_paths`  | String Array | User defined paths to the tee public key in the JWT body                                                                          | Empty   |
-| `insecure_key`        | Boolean      | Whether to check the trustworthy of the JWK inside JWT. See comments.                                                             | `false` |
+| `insecure_header_jwk`        | Boolean      | Skip `x5c`/`trusted_certs_paths` endorsement for a JWK in the JWT header; signature is still verified | `false` |
 
 Each JWT contains a TEE Public Key. Users can use the `extra_teekey_paths` field to additionally specify the path of
 this Key in the JWT.
@@ -49,16 +121,20 @@ Example of `extra_teekey_paths` is `/attester_runtime_data/tee-pubkey` which ref
 `attester_runtime_data.tee-pubkey` inside the JWT body claims. By default CoCo AS Token and Intel TA
 Token TEE Public Key paths are supported.
 
-For Attestation Services like CoCo-AS, the public key to verify the JWT will be given
-in the token's `jwk` field (with or without the public key cert chain `x5c`).
+For attestation services like CoCo-AS, the JWT header often carries a `jwk` (sometimes with an
+`x5c` certificate chain). KBS uses that key to verify the token signature. Whether the key's
+provenance is checked depends on `insecure_header_jwk`:
 
-- If `insecure_key` is set to `true`, KBS will ignore to verify the trustworthy of the `jwk`.
-- If `insecure_key` is set to `false`, KBS will look up its `trusted_certs_paths` and the `x5c`
-  field to verify the trustworthy of the `jwk`.
+- If `insecure_header_jwk` is `true`, the header `jwk` is used as-is; KBS does not validate its `x5c`
+  chain against `trusted_certs_paths`. The JWT signature is still verified. Intended for
+  testing only.
+- If `insecure_header_jwk` is `false`, the header `jwk` must include a non-empty `x5c` chain that
+  matches the key and chains to a certificate in `trusted_certs_paths`.
+  If `trusted_certs_paths` is empty, tokens with a header `jwk` cannot be verified.
 
-For Attestation Services like Intel TA, there will only be a `kid` field inside the JWT.
-The `kid` field is used to look up the trusted jwk configured by KBS via `trusted_jwk_sets` to
-verify the integrity and trustworthy of the JWT.
+For attestation services like Intel TA, the JWT header carries a `kid` instead of an embedded
+`jwk`. The `kid` is used to look up the signing key from `trusted_jwk_sets`.
+This lookup path is not affected by `insecure_header_jwk`.
 
 ### Attestation Configuration
 
@@ -84,14 +160,15 @@ When `type` is set to `coco_as_builtin`, the following properties can be set.
 | Property                   | Type                        | Description                                              | Default                                                                                                       |
 |----------------------------|-----------------------------|----------------------------------------------------------|---------------------------------------------------------------------------------------------------------------|
 | `timeout`                  | Integer                     | The maximum time (in minutes) of the attestation session | 5                                                                                                             |
-| `work_dir`                 | String                      | The location for Attestation Service to store data.      | First try from env `AS_WORK_DIR`. If no this env, then use `/opt/confidential-containers/attestation-service` |
-| `policy_engine`            | String                      | Policy engine type. Valid values: `opa`                  | `opa`                                                                                                         |
 | `rvps_config`              | [RVPSConfiguration][2]      | RVPS configuration                                       | See [RVPSConfiguration][2]                                                                                    |
 | `attestation_token_broker` | [AttestationTokenBroker][1] | Attestation result token configuration.                  | See [AttestationTokenBroker][1]                                                                               |
+| `verifier_config`          | Object                      | Optional verifier specific configuration (for example TPM)| See [Verifier Configuration][vcfg]                                                                            |
 
 [1]: #attestationtokenbroker
-
 [2]: #rvps-configuration
+[3]: #keyvaluestorage
+[4]: #tokensignerconfig
+[vcfg]: ../../attestation-service/docs/config.md#verifier-configuration
 
 ##### AttestationTokenBroker
 
@@ -102,10 +179,7 @@ When `type` is set to `coco_as_builtin`, the following properties can be set.
 | `developer_name` | String                 | The developer name to be used as part of the Verifier ID in the EAR            | No       | `https://confidentialcontainers.org`                                  |
 | `build_name`     | String                 | The build name to be used as part of the Verifier ID in the EAR                | No       | Automatically generated from Cargo package and AS version             |
 | `profile_name`   | String                 | The Profile that describes the EAR token                                       | No       | tag:github.com,2024:confidential-containers/Trustee`                  |
-| `policy_dir`     | String                 | The path to the work directory that contains policies to provision the tokens. | No       | `/opt/confidential-containers/attestation-service/token/policies` |
-| `signer`         | [TokenSignerConfig][1] | Signing material of the attestation result token.                              | No       | None                                                                  |
-
-[1]: #tokensignerconfig
+| `signer`         | [TokenSignerConfig][4] | Signing material of the attestation result token.                              | No       | None                                                                  |
 
 ##### TokenSignerConfig
 
@@ -125,25 +199,18 @@ This section is **optional**. When omitted, an ephemeral RSA key pair is generat
 
 ##### BuiltIn RVPS
 
-If `type` is set to `BuiltIn`, the following extra properties can be set
+If `type` is set to `BuiltIn`, the following extra properties can be set:
 
-| Property  | Type                        | Description                                                                  | Required | Default   |
-|-----------|-----------------------------|------------------------------------------------------------------------------|----------|-----------|
-| `storage` | ReferenceValueStorageConfig | Configuration of the storage for reference values (`LocalFs` or `LocalJson`) | No       | `LocalFs` |
+| Property | Type | Description | Required | Default |
+|----------|------|-------------|----------|---------|
+| `extractors` | Object | Optional configuration for provenance extractors | No | None |
+| `storage_type` | String | Optional RVPS-specific storage type override. If provided, overrides `storage_backend.storage_type` for RVPS only. Backend-specific parameters are still reused from `storage_backend.backends`. | No | None |
 
-A `ReferenceValueStorageConfig` can either be of type `LocalFs` or `LocalJson`
+> [!NOTE]
+> **Storage Configuration:** By default, BuiltIn RVPS uses the unified `storage_backend` configuration (see [Storage Backend Configuration](#storage-backend-configuration)) with the `reference_value` namespace. However, you can optionally provide a `storage_type` field to override only the storage type used by RVPS.
+> This allows you to use different storage backends for different components (e.g., LocalFs for KBS resources, but LocalJson for RVPS reference values).
 
-For `LocalFs`, the following properties can be set
-
-| Property    | Type   | Description                                        | Required | Default                                                             |
-|-------------|--------|----------------------------------------------------|----------|---------------------------------------------------------------------|
-| `file_path` | String | The path to the directory storing reference values | No       | `/opt/confidential-containers/attestation-service/reference_values` |
-
-For `LocalJson`, the following properties can be set
-
-| Property    | Type   | Description                                        | Required | Default                                                                  |
-|-------------|--------|----------------------------------------------------|----------|--------------------------------------------------------------------------|
-| `file_path` | String | The path to the file that storing reference values | No       | `/opt/confidential-containers/attestation-service/reference_values.json` |
+For detailed information about extractors configuration, including available extractors and their options, see the [RVPS README](../../rvps/README.md#extractors-configuration).
 
 ##### Remote RVPS
 
@@ -186,58 +253,88 @@ Detailed [documentation](https://docs.trustauthority.intel.com).
 
 ### Admin API Configuration
 
-The admin configuration has two parts.
-The admin backend is used for validating the admin token and extracting a role.
-The admin configuration can also specify which endpoints the role has access to.
+Admin mode is configured under `[admin]` with:
 
+- `authorization_mode = "InsecureAllowAll"`
+- `authorization_mode = "DenyAll"`
+- `authorization_mode = "AuthenticatedAuthorization"` (recommended for production)
 
-Multiple Admin backends are available. 
-Today, the available backends are `DenyAll` (rejects all admin tokens, thereby blocking all admin interfaces),
-`InsecureAllowAll` (treats every request as if there is a valid admin token and return the role `Anonymous`)
-and `Simple` (checks the admin token based on a set of public keys).
+For `authorization_mode = "AuthenticatedAuthorization"`, configure:
 
-By default, the simple backend will be used, but no personas will be enabled.
-Use the `type` field to set the admin backend.
+- `[admin.authentication.bearer_jwt]`
+- `[admin.authorization.regex_acl]`
 
-| Property          | Type    | Description                                                       | Required | Default |
-|-------------------|---------|-------------------------------------------------------------------|----------|---------|
-| `type`            | String  | The backend used to validate admin requests.                      | No       | Simple  |
-| `roles`           |         | Rules for accessing admin endpoints                               | No       | Empty   |
+`bearer_jwt` properties:
 
-If the `Simple` backend is used, a list of admin personas can be provided, each with the following properties:
+| Property | Type | Description | Required | Default |
+|----------|------|-------------|----------|---------|
+| `identity_providers` | Array | Trusted issuer entries for JWT verification | No | Empty |
 
-| Property          | Type    | Description                                                       | Required | Default |
-|-------------------|---------|-------------------------------------------------------------------|----------|---------|
-| `id`              | String  | A string used to identify the admin.                              | Yes      | Simple  |
-| `public_key_path` | String  | The path to the public key corresponding to the admin token.      | Yes      | Simple  |
+Each `identity_providers` item:
 
-The role field can specify rules that govern which endpoints an admin is allowed to visit.
-If no roles are specified, all admin can access all admin endpoints.
-Otherwise, the roles field should be a list of role entries.
-One role entry looks like this.
+| Property | Type | Description | Required |
+|----------|------|-------------|----------|
+| `issuer` | String | Expected JWT `iss` value (leave empty to skip issuer check) | No |
+| `audience` | String | Expected JWT `aud` value (leave empty to skip audience check) | No |
+| `public_key_uri` | String | PEM public key source (`https://`, `file://`, local path) | No* |
+| `jwk_set_uri` | String | JWKS source (`https://`, `file://`, or local path) | No* |
 
-| Property          | Type   | Description                                              | Required |
-|-------------------|--------|----------------------------------------------------------|----------|
-| id                | String | The role that this rule applies to                       | Yes      |
-| allowed_endpoints | String | A regular expression matching endpoints that are allowed | Yes      |
+\* At least one of `public_key_uri` or `jwk_set_uri` is required.
 
-After the admin token is validated, the role extracted from the token will be checked against
-the roles specified in the config file.
-If a matching role is found, the `allowed_endpoints` regular expression is used to determine
-which endpoints the admin can access.
-The regular expression must start with `^/kbs` and end with `$` to avoid ambiguity.
-If no matching role is found (and at least one role is specified), the admin will not be able
-to access any endpoints.
+JWTs used for admin access **MUST** include a `role` claim.
 
-### Policy Engine Configuration
+`regex_acl` properties:
 
-The following properties can be set under the `[policy_engine]` section.
+| Property | Type | Description | Required |
+|----------|------|-------------|----------|
+| `acls` | Array | Role-to-endpoint allow rules | No |
 
-This section is **optional**. When omitted, a default configuration is used.
+Each ACL entry:
 
-| Property      | Type   | Description                                                                                                | Required | Default                                        |
-|---------------|--------|------------------------------------------------------------------------------------------------------------|----------|------------------------------------------------|
-| `policy_path` | String | Path to a file containing a policy for evaluating whether the TCB status has access to specific resources. | No       | `/opa/confidential-containers/kbs/policy.rego` |
+| Property | Type | Description | Required |
+|----------|------|-------------|----------|
+| `role` | String | JWT `role` value to match | Yes |
+| `allowed_endpoints` | String | Regex of allowed request paths | Yes |
+
+`allowed_endpoints` must start with `^/kbs` and end with `$`.
+
+### Storage Backend Configuration
+
+KBS supports a unified storage backend configuration that allows you to declare a single storage configuration that will be used for all storage needs in KBS, including
+all the persistent storages that KBS relies on, including potentially underlying built-in AS and built-in RVPS.
+
+This simplifies deployment by eliminating the need to configure storage separately for each component.
+
+For detailed information about the unified storage backend configuration format, including what a **namespace** is and how it works, see the [Key-Value Storage README](../../deps/key-value-storage/README.md#unified-storage-backend-configuration).
+
+#### Storage Namespaces in KBS
+
+When using the unified storage backend configuration, KBS creates the following storage namespaces:
+
+| Namespace Name | Component | Description |
+|---------------|-----------|-------------|
+| `kbs` | KBS Policy Engine | Stores the things used by KBS, like KBS Resource Policy |
+| `repository` | Resource Plugin | Stores secret resources managed by the resource plugin |
+| `kbs_protocol_session` | KBS Attestation Session | Stores RCAR attestation session state |
+| `attestation_service_policy` | Built-in AS | Stores EAR policies for the built-in Attestation Service |
+| `reference_value` | Built-in AS RVPS | Stores reference values for the built-in RVPS |
+
+The KBS Resource Policy will be stored inside `kbs` namespace with key `resource-policy`.
+
+For detailed configuration options and examples, see the [Key-Value Storage README](../../deps/key-value-storage/README.md#unified-storage-backend-configuration).
+
+> [!NOTE]
+> All persistent storage is configured via `[storage_backend]`. If `[storage_backend]` is omitted, the default in-memory storage is used (data is not persisted across restarts).
+
+#### Optional Session Storage Type Override
+
+KBS supports an optional `session_storage_type` field for attestation session state.
+
+When `session_storage_type` is not configured, KBS falls back to `storage_backend.storage_type`.
+
+Backend-specific configuration is always reused from `storage_backend.backends`.
+
+The attestation session storage namespace is always `kbs_protocol_session`.
 
 ### Plugins Configuration
 
@@ -253,17 +350,13 @@ The `name` field is `resource` to enable this plugin.
 Resource plugin allows user with proper attestation token to access storage that KBS keeps.
 This is also called "Repository" in old versions. The properties to be configured are listed.
 
-| Property | Type   | Description                                                              | Required | Default   |
-|----------|--------|--------------------------------------------------------------------------|----------|-----------|
-| `type`   | String | The resource repository type. Valid values: `LocalFs`, `Aliyun`, `Vault` | Yes      | `LocalFs` |
+| Property | Type   | Description                                                   | Required | Default    |
+|----------|--------|---------------------------------------------------------------|----------|------------|
+| `type`| String | Storage type for resources: `kvstorage`, `Aliyun`, `Aws`, `Vault` | No       | `kvstorage`|
 
-**`LocalFs` Properties**
+When `storage_backend_type = "kvstorage"` (default), the resource plugin uses the unified [storage backend](#storage-backend-configuration) with namespace `repository`. Configure storage in the `[storage_backend]` section only.
 
-| Property   | Type   | Description                     | Required | Default                                       |
-|------------|--------|---------------------------------|----------|-----------------------------------------------|
-| `dir_path` | String | Path to a repository directory. | No       | `/opt/confidential-containers/kbs/repository` |
-
-**`Aliyun` Properties**
+When `storage_backend_type = "Aliyun"`:
 
 | Property          | Type   | Description                       | Required | Example                                             |
 |-------------------|--------|-----------------------------------|----------|-----------------------------------------------------|
@@ -272,7 +365,19 @@ This is also called "Repository" in old versions. The properties to be configure
 | `password`        | String | AAP client key password           | Yes      | `8f9989c18d27...`                                   |
 | `cert_pem`        | String | CA cert for the KMS instance      | Yes      | `-----BEGIN CERTIFICATE----- ...`                   |
 
-** `Vault` Properties **
+When `storage_backend_type = "Aws"`:
+
+| Property       | Type   | Description                                                                                                       | Required | Example                                                |
+|----------------|--------|-------------------------------------------------------------------------------------------------------------------|----------|--------------------------------------------------------|
+| `region`       | String | AWS region. If omitted, resolved from the default credential chain (`AWS_REGION`, profile, IMDS, …).              | No       | `us-east-1`                                            |
+| `endpoint_url` | String | Endpoint override. Use for FIPS endpoints, GovCloud, or LocalStack in tests.                                      | No       | `https://secretsmanager-fips.us-east-1.amazonaws.com`  |
+
+Credentials are resolved by the AWS default provider chain (env vars, shared
+config, IRSA, EC2/ECS instance role). The backend is read-only — provision
+secrets via AWS APIs. The KBS `tag` field maps to the Secrets Manager
+`SecretId` (name or ARN); `repo/type` are ignored.
+
+When `storage_backend_type = "Vault"`:
 
 | Property     | Type          | Required | Description                                 | Default    |
 |--------------|---------------|----------|---------------------------------------------|------------|
@@ -322,9 +427,81 @@ with the `[plugins.self_signed_ca]` properties.
 
 Detailed [documentation](#kbs/docs/plugins/nebula_ca.md).
 
+#### External Plugin Configuration
+
+External plugins extend KBS with custom gRPC-backed endpoints. A single `[[plugins]]` entry
+with `name = "external"` owns all backends via a `backends` inline array:
+
+```toml
+[[plugins]]
+name = "external"
+backends = [
+  { name = "my-plugin", endpoint = "https://localhost:50051", tls_mode = "tls", ca_cert_path = "/etc/kbs/plugin-ca.pem" },
+]
+```
+
+Each backend is reachable at `/kbs/v0/external/<name>/...`.
+
+**Per-backend fields:**
+
+| Field | Type | Required | Default | Description |
+|---|---|---|---|---|
+| `name` | string | Yes | — | Sub-plugin name used in URL routing |
+| `endpoint` | string | Yes | — | gRPC endpoint (`http://` for insecure, `https://` for TLS) |
+| `ca_cert_path` | string | No | — | CA certificate path (required when `endpoint` is a TLS endpoint`) |
+| `timeout_ms` | integer | No | — | Per-request timeout in milliseconds |
+
+See [`ext_plugin.md`](ext_plugin.md) for deployment details and the gRPC protocol.
+
 ## Configuration Examples
 
-Using a built-in CoCo AS:
+### Using Storage Backend
+
+With unified storage backend, you only need to declare one storage configuration that will be used for all storage needs:
+
+```toml
+[http_server]
+sockets = ["0.0.0.0:8080"]
+insecure_http = true
+
+[admin]
+authorization_mode = "InsecureAllowAll"
+
+[attestation_token]
+
+# Unified storage backend configuration
+# This single configuration will be used for:
+# - KBS policy engine (namespace: "kbs")
+# - Resource plugin storage (namespace: "repository")
+# - KBS attestation session storage (namespace: "kbs_protocol_session")
+# - Built-in AS policy storage (namespace: "attestation_service_policy")
+# - Built-in AS RVPS storage (namespace: "reference_value")
+[storage_backend]
+storage_type = "LocalFs"
+
+[storage_backend.backends.local_fs]
+dir_path = "/opt/confidential-containers/storage"
+
+[attestation_service]
+type = "coco_as_builtin"
+
+[attestation_service.attestation_token_broker]
+duration_min = 5
+
+[attestation_service.rvps_config]
+type = "BuiltIn"
+# Optional: configure extractors
+# [attestation_service.rvps_config.extractors]
+# swid_extractor = {}
+
+[[plugins]]
+name = "resource"
+storage_backend_type = "kvstorage"
+```
+
+### Using RVPS-Specific Storage Configuration
+
+You can configure RVPS to use a different storage backend than the rest of KBS:
 
 ```toml
 [http_server]
@@ -336,10 +513,18 @@ type = "InsecureAllowAll"
 
 [attestation_token]
 
+# Unified storage backend for most components (LocalFs)
+[storage_backend]
+storage_type = "LocalFs"
+
+[storage_backend.backends.local_fs]
+dir_path = "/opt/confidential-containers/storage"
+
+[storage_backend.backends.local_json]
+file_dir_path = "/var/lib/rvps/references"
+
 [attestation_service]
 type = "coco_as_builtin"
-work_dir = "/opt/confidential-containers/attestation-service"
-policy_engine = "opa"
 
 [attestation_service.attestation_token_broker]
 duration_min = 5
@@ -347,32 +532,41 @@ duration_min = 5
 [attestation_service.rvps_config]
 type = "BuiltIn"
 
-[attestation_service.rvps_config.storage]
-type = "LocalFs"
+# RVPS-specific storage type override (LocalJson)
+# Backend-specific parameters are still read from [storage_backend.backends]
+storage_type = "LocalJson"
+
+# Optional: configure extractors
+[attestation_service.rvps_config.extractors]
+swid_extractor = {}
 
 [[plugins]]
 name = "resource"
-type = "LocalFs"
-dir_path = "/opt/confidential-containers/kbs/repository"
+storage_backend_type = "kvstorage"
 ```
 
-Using a remote CoCo AS:
+### Using a remote CoCo AS
 
 ```toml
 [http_server]
 insecure_http = true
 
 [admin]
-type = "InsecureAllowAll"
+authorization_mode = "InsecureAllowAll"
 
 [attestation_service]
 type = "coco_as_grpc"
 as_addr = "http://127.0.0.1:50004"
 
+[storage_backend]
+storage_type = "LocalFs"
+
+[storage_backend.backends.local_fs]
+dir_path = "/opt/confidential-containers/storage"
+
 [[plugins]]
 name = "resource"
-type = "LocalFs"
-dir_path = "/opt/confidential-containers/kbs/repository"
+storage_backend_type = "kvstorage"
 ```
 
 Running with Intel Trust Authority attestation service:
@@ -396,19 +590,25 @@ certs_file = "https://portal.trustauthority.intel.com"
 allow_unmatched_policy = true
 
 [admin]
-type = "Simple"
+authorization_mode = "AuthenticatedAuthorization"
 
-[[admin.personas]]
-id = "admin"
-public_key_path = "/etc/kbs-admin.pub"
+[admin.authentication.bearer_jwt]
+identity_providers = [
+  { public_key_uri = "/etc/kbs-admin.pub" }
+]
 
-[policy_engine]
-policy_path = "/etc/kbs-policy.rego"
+[admin.authorization.regex_acl]
+acls = [{ role = "admin", allowed_endpoints = "^/kbs/.+$" }]
+
+[storage_backend]
+storage_type = "LocalFs"
+
+[storage_backend.backends.local_fs]
+dir_path = "/opt/confidential-containers/storage"
 
 [[plugins]]
 name = "resource"
-type = "LocalFs"
-dir_path = "/opt/confidential-containers/kbs/repository"
+storage_backend_type = "kvstorage"
 ```
 
 Using Nebula CA plugin:
@@ -419,14 +619,12 @@ sockets = ["0.0.0.0:8080"]
 insecure_http = true
 
 [admin]
-type = "InsecureAllowAll"
+authorization_mode = "InsecureAllowAll"
 
 [attestation_token]
 
 [attestation_service]
 type = "coco_as_builtin"
-work_dir = "/opt/confidential-containers/attestation-service"
-policy_engine = "opa"
 
 [attestation_service.attestation_token_broker]
 duration_min = 5
@@ -434,13 +632,15 @@ duration_min = 5
 [attestation_service.rvps_config]
 type = "BuiltIn"
 
-[attestation_service.rvps_config.storage]
-type = "LocalFs"
+[storage_backend]
+storage_type = "LocalFs"
+
+[storage_backend.backends.local_fs]
+dir_path = "/opt/confidential-containers/storage"
 
 [[plugins]]
 name = "resource"
-type = "LocalFs"
-dir_path = "/opt/confidential-containers/kbs/repository"
+storage_backend_type = "kvstorage"
 
 [[plugins]]
 name = "nebula-ca"
@@ -459,21 +659,124 @@ sockets = ["127.0.0.1:50002"]
 insecure_http = true
 
 [admin]
-type = "InsecureAllowAll"
-
-[[admin.personas]]
-id = "admin"
-public_key_path = "./work/kbs.pem"
+authorization_mode = "InsecureAllowAll"
 
 [attestation_token]
 trusted_certs_paths = ["./work/ca-cert.pem"]
-insecure_key = false
+insecure_header_jwk = false
 
-[policy_engine]
-policy_path = "./work/kbs-policy.rego"
+[storage_backend]
+storage_type = "LocalFs"
+
+[storage_backend.backends.local_fs]
+dir_path = "./work/storage"
 
 [[plugins]]
 name = "resource"
-type = "LocalFs"
-dir_path = "./work/repository"
+storage_backend_type = "kvstorage"
 ```
+
+### TLS Configuration Examples
+
+#### Using the Modern Profile (TLS 1.3 Only)
+
+For high-security environments that only support modern clients:
+
+```toml
+[http_server]
+sockets = ["0.0.0.0:8080"]
+private_key = "/etc/kbs-private.key"
+certificate = "/etc/kbs-cert.pem"
+tls_profile = "modern"
+
+[attestation_service]
+type = "coco_as_grpc"
+as_addr = "http://127.0.0.1:50001"
+
+[admin]
+type = "DenyAll"
+
+[storage_backend]
+storage_type = "memory"
+```
+
+#### Using the Intermediate Profile (Default, Recommended)
+
+Balances security and compatibility with TLS 1.2 and 1.3 support:
+
+```toml
+[http_server]
+sockets = ["0.0.0.0:8080"]
+private_key = "/etc/kbs-private.key"
+certificate = "/etc/kbs-cert.pem"
+tls_profile = "intermediate"  # Can be omitted (it's the default)
+
+[attestation_service]
+type = "coco_as_grpc"
+as_addr = "http://127.0.0.1:50001"
+
+[admin]
+type = "DenyAll"
+
+[storage_backend]
+storage_type = "memory"
+```
+
+#### Using Custom TLS Configuration
+
+Full control over TLS parameters:
+
+```toml
+[http_server]
+sockets = ["0.0.0.0:8080"]
+private_key = "/etc/kbs-private.key"
+certificate = "/etc/kbs-cert.pem"
+tls_profile = "custom"
+tls_min_version = "1.2"
+tls_max_version = "1.3"
+# TLS 1.3 cipher suites (only encryption+hash; key exchange configured via tls_groups)
+tls_ciphers = "TLS_AES_256_GCM_SHA384:TLS_CHACHA20_POLY1305_SHA256:TLS_AES_128_GCM_SHA256"
+# Classical key exchange groups
+tls_groups = "X25519:secp256r1:secp384r1"
+
+[attestation_service]
+type = "coco_as_grpc"
+as_addr = "http://127.0.0.1:50001"
+
+[admin]
+type = "DenyAll"
+
+[storage_backend]
+storage_type = "memory"
+```
+
+#### Using Post-Quantum Cryptography (PQC)
+
+Configure TLS 1.3 with post-quantum key exchange:
+
+```toml
+[http_server]
+sockets = ["0.0.0.0:8080"]
+private_key = "/etc/kbs-private.key"
+certificate = "/etc/kbs-cert.pem"
+tls_profile = "custom"
+tls_min_version = "1.3"
+tls_max_version = "1.3"
+# TLS 1.3 cipher suites (only encryption+hash; key exchange configured via tls_groups)
+tls_ciphers = "TLS_AES_256_GCM_SHA384:TLS_CHACHA20_POLY1305_SHA256:TLS_AES_128_GCM_SHA256"
+# Post-quantum key exchange groups with classical fallbacks
+tls_groups = "X25519MLKEM768:X25519:secp256r1"
+
+[attestation_service]
+type = "coco_as_grpc"
+as_addr = "http://127.0.0.1:50001"
+
+[admin]
+type = "DenyAll"
+
+[storage_backend]
+storage_type = "memory"
+```
+
+> [!NOTE]
+> Post-quantum algorithms require OpenSSL 3.5 or later. If PQC algorithms are not available, KBS will log a warning and fall back to classical algorithms.
