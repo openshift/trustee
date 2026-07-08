@@ -9,7 +9,7 @@ use attestation::{
     ReferenceValueQueryRequest, ReferenceValueQueryResponse, ReferenceValueRegisterRequest,
 };
 use base64::{engine::general_purpose::URL_SAFE_NO_PAD, Engine};
-use kbs_types::{Challenge, HashAlgorithm, Tee};
+use kbs_types::{Challenge, Tee};
 use mobc::{Manager, Pool};
 use serde::Deserialize;
 use std::collections::HashMap;
@@ -37,6 +37,8 @@ pub const DEFAULT_POOL_SIZE: u64 = 100;
 /// legitimately slow, so this is deliberately generous; it exists only to keep
 /// a silently wedged connection from blocking a request forever.
 const AS_REQUEST_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(300);
+
+pub const COCO_AS_HASH_ALGORITHM: &str = "sha384";
 
 #[derive(Clone, Debug, Deserialize, PartialEq)]
 pub struct GrpcConfig {
@@ -110,15 +112,10 @@ impl Attest for GrpcClientPool {
                 .trim_start_matches('"')
                 .to_string();
 
-            let runtime_data_hash_algorithm = match evidence.tee {
-                Tee::Se => HashAlgorithm::Sha512.as_ref().to_string().to_lowercase(),
-                _ => HashAlgorithm::Sha384.as_ref().to_string().to_lowercase(),
-            };
-
             let mut request = IndividualAttestationRequest {
                 tee,
                 evidence: URL_SAFE_NO_PAD.encode(evidence.tee_evidence.to_string()),
-                runtime_data_hash_algorithm,
+                runtime_data_hash_algorithm: COCO_AS_HASH_ALGORITHM.into(),
                 runtime_data: Some(RuntimeData::StructuredRuntimeData(
                     evidence.runtime_data.to_string(),
                 )),
@@ -174,11 +171,9 @@ impl Attest for GrpcClientPool {
             _ => make_nonce().await?,
         };
 
-        let extra_params = crate::attestation::generate_extra_params(tee, &tee_parameters)?;
-
         let challenge = Challenge {
             nonce,
-            extra_params,
+            extra_params: serde_json::Value::String(String::new()),
         };
 
         Ok(challenge)
