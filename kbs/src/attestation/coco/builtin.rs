@@ -2,7 +2,6 @@
 // Licensed under the Apache License, Version 2.0, see LICENSE for details.
 // SPDX-License-Identifier: Apache-2.0
 
-use crate::attestation::generate_extra_params;
 use anyhow::*;
 use async_trait::async_trait;
 use attestation_service::{
@@ -73,16 +72,11 @@ impl Attest for BuiltInCoCoAs {
         let mut verification_requests = vec![];
 
         for evidence in evidence_to_verify {
-            let runtime_data_hash_algorithm = match evidence.tee {
-                Tee::Se => HashAlgorithm::Sha512,
-                _ => HashAlgorithm::Sha384,
-            };
-
             let mut request = VerificationRequest {
                 evidence: evidence.tee_evidence,
                 tee: evidence.tee,
                 runtime_data: Some(RuntimeData::Structured(evidence.runtime_data)),
-                runtime_data_hash_algorithm,
+                runtime_data_hash_algorithm: HashAlgorithm::Sha384,
                 init_data: None,
             };
             if let Some(init_data) = evidence.init_data {
@@ -118,12 +112,13 @@ impl Attest for BuiltInCoCoAs {
             }
             _ => make_nonce().await?,
         };
-        let extra_params = generate_extra_params(tee, &tee_parameters)?;
 
-        Ok(Challenge {
+        let challenge = Challenge {
             nonce,
-            extra_params,
-        })
+            extra_params: serde_json::Value::String(String::new()),
+        };
+
+        Ok(challenge)
     }
 
     async fn register_reference_value(&self, message: &str) -> anyhow::Result<()> {
