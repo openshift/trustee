@@ -1,5 +1,5 @@
 # Use UBI to build.
-FROM registry.access.redhat.com/ubi9:9.7 as builder
+FROM registry.access.redhat.com/ubi9:9.8-1784720169 as builder
 ARG ALIYUN=false
 ARG VAULT=true
 
@@ -52,7 +52,7 @@ RUN if [ $(uname -m) = "x86_64" ]; then \
 fi
 
 # Package UBI image.
-FROM registry.access.redhat.com/ubi9:9.7
+FROM registry.access.redhat.com/ubi9:9.8-1784720169
 
 # Update packages. Get CVE fixes sooner.
 RUN dnf -y update && dnf clean all
