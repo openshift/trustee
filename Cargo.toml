@@ -35,7 +35,7 @@ const_format = "0.2.36"
 educe = "0.6"
 ear = "0.5.0"
 hex = "0.4.3"
-kbs_protocol = { git = "https://github.com/confidential-containers/guest-components.git", rev = "1fcebcb66a3c21b62e852819d5b55212c90eba2a", default-features = false }
+kbs_protocol = { git = "https://github.com/confidential-containers/guest-components.git", rev = "d68f9b2495c78c1a93a1b0da825c91013a276af2", default-features = false }
 kbs-types = "0.15.0"
 kms = { git = "https://github.com/confidential-containers/guest-components.git", rev = "1fcebcb66a3c21b62e852819d5b55212c90eba2a", default-features = false }
 jsonwebtoken = { version = "10", default-features = false, features = [
