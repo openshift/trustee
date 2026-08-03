@@ -82,7 +82,7 @@ jobs:
           persist-credentials: false
 
       - name: Install OPA command line tool
-        uses: open-policy-agent/setup-opa@b2b258e089860efaadaaf71bf6e3aecb4a3eeff1 # v2.2.0 # v2
+        uses: open-policy-agent/setup-opa@34a30e8a924d1b03ce2cf7abe97250bbb1f332b5 # v2.2.0 # v2
         with:
           version: latest
 
