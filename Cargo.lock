@@ -4364,6 +4364,7 @@ dependencies = [
  "sha2 0.11.1",
  "sha3-kmac",
  "shadow-rs",
+ "spire-api",
  "strum 0.28.0",
  "tempfile",
  "thiserror 2.0.21",
@@ -7275,6 +7276,27 @@ dependencies = [
 ]
 
 [[package]]
+name = "spiffe"
+version = "0.16.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "d7d0a770f9a8571eb96f9c319b3b55dd7118e3047bd3629b894882506b9e8295"
+dependencies = [
+ "base64ct",
+ "hyper-util",
+ "pkcs8 0.10.2",
+ "serde",
+ "serde_json",
+ "thiserror 2.0.21",
+ "time",
+ "tokio",
+ "tonic",
+ "tower",
+ "url",
+ "x509-parser",
+ "zeroize",
+]
+
+[[package]]
 name = "spin"
 version = "0.9.9"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -7288,6 +7310,20 @@ name = "spin"
 version = "0.12.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "0134f9043ed38b087ac4f7d4af44c79e2c9e5094421fe3164f435ce585953b10"
+
+[[package]]
+name = "spire-api"
+version = "0.8.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "1d3b8a20d9ce0df083d76c4733759ad68b42613351c803cfb60ea10123093ecb"
+dependencies = [
+ "futures",
+ "prost",
+ "spiffe",
+ "thiserror 2.0.21",
+ "tonic",
+ "tonic-prost",
+]
 
 [[package]]
 name = "spki"
