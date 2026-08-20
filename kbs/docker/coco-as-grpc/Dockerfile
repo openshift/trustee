@@ -36,7 +36,7 @@ RUN if [ "${NEBULA_CA_PLUGIN}" = "true" ]; then \
     fi
 
 # ubuntu:24.04
-FROM ubuntu@sha256:7c06e91f61fa88c08cc74f7e1b7c69ae24910d745357e0dfe1d2c0322aaf20f9
+FROM ubuntu@sha256:2260313b31c8c011cd2eebe728008efac1b3982be73eb71348ea2648d2c0e09b
 
 LABEL org.opencontainers.image.source="https://github.com/confidential-containers/trustee/kbs"
 
