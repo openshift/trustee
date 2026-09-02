@@ -46,11 +46,18 @@ vault = ["vaultrs"]
 # Use AWS Secrets Manager as KBS resource backend
 aws = ["aws-config", "aws-sdk-secretsmanager"]
 
+# Use GCP Secret Manager as KBS resource backend
+gcp = ["google-cloud-secretmanager-v1"]
+
 [dependencies]
 actix = "0.13.5"
 actix-web = { workspace = true, features = ["openssl"] }
 actix-web-httpauth.workspace = true
-aes-gcm = { version = "0.10.1", features = ["zeroize"] }
+aes-gcm = { version = "0.11.0", features = [
+    "zeroize",
+    "arrayvec",
+    "getrandom",
+] }
 # Direct deps to activate their `zeroize` feature: `aes-gcm`'s own `zeroize`
 # feature does not propagate down to `aes` or `polyval`. Do not remove.
 aes = { version = "0.8", features = ["zeroize"] }
@@ -78,7 +85,7 @@ zeroize.workspace = true
 policy-engine.path = "../deps/policy-engine"
 prometheus = "0.14.0"
 prost = { workspace = true, optional = true }
-regex = "1.12.3"
+regex = "1.12.4"
 regorus.workspace = true
 reqwest = { workspace = true, features = ["default-tls"] }
 rsa.workspace = true
@@ -107,9 +114,12 @@ vaultrs = { version = "0.8.0", optional = true }
 aws-config = { version = "1", features = [
     "behavior-version-latest",
 ], optional = true }
-aws-sdk-secretsmanager = { version = "1", features = [
+aws-sdk-secretsmanager = { version = "1", default-features = false, features = [
     "behavior-version-latest",
+    "default-https-client",
+    "rt-tokio",
 ], optional = true }
+google-cloud-secretmanager-v1 = { version = "1.10", optional = true }
 
 [target.'cfg(not(any(target_arch = "s390x", target_arch = "aarch64")))'.dependencies]
 attestation-service = { path = "../attestation-service", default-features = false, features = [
