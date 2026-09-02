@@ -106,11 +106,15 @@ Attestation Token configuration controls attestation token verifications. This
 is important when a resource retrievement is handled by KBS. Usually an attestation
 token will be together with the request, and KBS will first verify the token.
 
+For an overview of when verification happens, how trust anchors relate to AS
+token signing, and deployment examples, see
+[Attestation Token Verification](./attestation_token_verification.md).
+
 The following properties can be set under the `[attestation_token]` section.
 
 | Property              | Type         | Description                                                                                                                       | Default |
 |-----------------------|--------------|-----------------------------------------------------------------------------------------------------------------------------------|---------|
-| `trusted_jwk_sets`    | String Array | Trusted JWKS/OpenID sources (`file://` or `https://`) used to verify attestation tokens                                         | Empty   |
+| `trusted_jwk_sets`    | String Array | Trusted JWKS sources (`file://` or `https://`). Loads JWKS directly when possible, otherwise via OpenID discovery. The keys are used to verify attestation tokens.               | Empty   |
 | `trusted_certs_paths` | String Array | Trusted Certificates file (PEM format) for Attestation Tokens trustworthy verification                                            | Empty   |
 | `extra_teekey_paths`  | String Array | User defined paths to the tee public key in the JWT body                                                                          | Empty   |
 | `insecure_header_jwk`        | Boolean      | Skip `x5c`/`trusted_certs_paths` endorsement for a JWK in the JWT header; signature is still verified | `false` |
@@ -277,7 +281,7 @@ Each `identity_providers` item:
 | `issuer` | String | Expected JWT `iss` value (leave empty to skip issuer check) | No |
 | `audience` | String | Expected JWT `aud` value (leave empty to skip audience check) | No |
 | `public_key_uri` | String | PEM public key source (`https://`, `file://`, local path) | No* |
-| `jwk_set_uri` | String | JWKS source (`https://`, `file://`, or local path) | No* |
+| `jwk_set_uri` | String | JWKS source (`https://`, `file://`, or local path). Remote `https://` URLs load JWKS directly when possible, otherwise via OpenID discovery. | No* |
 
 \* At least one of `public_key_uri` or `jwk_set_uri` is required.
 
@@ -352,7 +356,7 @@ This is also called "Repository" in old versions. The properties to be configure
 
 | Property | Type   | Description                                                   | Required | Default    |
 |----------|--------|---------------------------------------------------------------|----------|------------|
-| `type`| String | Storage type for resources: `kvstorage`, `Aliyun`, `Aws`, `Vault` | No       | `kvstorage`|
+| `type`| String | Storage type for resources: `kvstorage`, `Aliyun`, `Aws`, `Gcp`, `Vault` | No       | `kvstorage`|
 
 When `storage_backend_type = "kvstorage"` (default), the resource plugin uses the unified [storage backend](#storage-backend-configuration) with namespace `repository`. Configure storage in the `[storage_backend]` section only.
 
@@ -376,6 +380,20 @@ Credentials are resolved by the AWS default provider chain (env vars, shared
 config, IRSA, EC2/ECS instance role). The backend is read-only — provision
 secrets via AWS APIs. The KBS `tag` field maps to the Secrets Manager
 `SecretId` (name or ARN); `repo/type` are ignored.
+
+When `storage_backend_type = "Gcp"`:
+
+| Property       | Type   | Description                                                                                          | Required | Example              |
+|----------------|--------|------------------------------------------------------------------------------------------------------|----------|----------------------|
+| `project_id`   | String | GCP project id (or number) that owns the secrets.                                                     | Yes      | `my-project`         |
+| `endpoint_url` | String | Endpoint override. Use for a private service endpoint or a fake server in tests.                      | No       | `http://localhost:8080` |
+
+Credentials are resolved via Application Default Credentials
+(`GOOGLE_APPLICATION_CREDENTIALS`, `gcloud auth application-default login`, or the
+GCE/GKE/Cloud Run metadata server). The backend is read-only — provision secrets
+via GCP APIs. The KBS `tag` field maps to the Secret Manager secret name and the
+latest enabled version is served
+(`projects/<project_id>/secrets/<tag>/versions/latest`); `repo/type` are ignored.
 
 When `storage_backend_type = "Vault"`:
 

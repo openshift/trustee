@@ -1,5 +1,5 @@
 # Use UBI to build.
-FROM registry.access.redhat.com/ubi9:9.7 as builder
+FROM registry.access.redhat.com/ubi9:9.8 as builder
 ARG ALIYUN=false
 ARG VAULT=true
 
@@ -52,10 +52,10 @@ RUN if [ $(uname -m) = "x86_64" ]; then \
 fi
 
 # Package UBI image.
-FROM registry.access.redhat.com/ubi9:9.7
+FROM registry.access.redhat.com/ubi9/ubi-minimal:latest
 
 # Update packages. Get CVE fixes sooner.
-RUN dnf -y update && dnf clean all
+RUN microdnf -y update && microdnf clean all
 
 COPY --from=builder /usr/local/bin/kbs /usr/local/bin/kbs
 COPY --from=builder /usr/src/kbs/sgx_dcap_quoteverify_stubs/libsgx-dcap-quote-verify-1.21.100.3-1.el9.x86_64.rpm /tmp/libsgx-dcap-quote-verify-1.21.100.3-1.el9.x86_64.rpm
@@ -64,7 +64,7 @@ COPY --from=builder /usr/src/kbs/sgx_dcap_quoteverify_stubs/libsgx-dcap-default-
 # Install Intel binaries
 RUN \
 if [ $(uname -m) = "x86_64" ]; then \
-  dnf -y --nogpgcheck --setopt=install_weak_deps=0 localinstall \
+  rpm -ivh --nodeps \
     /tmp/libsgx-dcap-quote-verify-1.21.100.3-1.el9.x86_64.rpm \
     /tmp/libsgx-dcap-default-qpl-1.21.100.3-1.el9.x86_64.rpm; \
 fi && \

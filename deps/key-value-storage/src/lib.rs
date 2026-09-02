@@ -27,6 +27,9 @@ pub mod local_json;
 
 pub mod local_fs;
 
+pub mod provider;
+pub use provider::{KvStorageProvider, StorageProvider};
+
 #[derive(Default)]
 pub struct SetParameters {
     /// Whether to overwrite the existing value.
@@ -104,6 +107,10 @@ impl KeyValueStorageStructConfig {
                         })?;
                 Ok(Arc::new(postgres::PostgresClient::new(config.clone(), namespace).await?) as _)
             }
+            #[cfg(not(feature = "postgres"))]
+            KeyValueStorageType::Postgres => Err(KeyValueStorageError::InvalidConfiguration {
+                message: "PostgreSQL storage support is not enabled".to_string(),
+            }),
             #[cfg(feature = "redis")]
             KeyValueStorageType::Redis => {
                 let config =
@@ -114,6 +121,10 @@ impl KeyValueStorageStructConfig {
                         })?;
                 Ok(Arc::new(redis::RedisClient::new(config.clone(), namespace).await?) as _)
             }
+            #[cfg(not(feature = "redis"))]
+            KeyValueStorageType::Redis => Err(KeyValueStorageError::InvalidConfiguration {
+                message: "Redis storage support is not enabled".to_string(),
+            }),
             KeyValueStorageType::LocalJson => {
                 let config =
                     self.local_json
