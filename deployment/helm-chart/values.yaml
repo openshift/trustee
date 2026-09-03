@@ -265,7 +265,7 @@ bootstrapUserKeysJob:
     # -- kubectl container image repository that creates or updates the release-scoped Secret.
     repository: quay.io/kata-containers/kubectl
     # -- kubectl container image tag.
-    tag: "20260112"
+    tag: "20260607"
     # -- kubectl container image pull policy.
     pullPolicy: IfNotPresent
   # -- CPU/memory requests and limits for the bootstrap hook Job.
