@@ -15,7 +15,7 @@ RUN cd kbs && make AS_FEATURE=intel-trust-authority-as ALIYUN=${ALIYUN} VAULT=${
     make install-kbs
 
 # ubuntu:24.04
-FROM ubuntu@sha256:7c06e91f61fa88c08cc74f7e1b7c69ae24910d745357e0dfe1d2c0322aaf20f9
+FROM ubuntu@sha256:513c074113a871b51a8d16ab445c88779d6452d937a164fb5cc479f32668a41d
 
 LABEL org.opencontainers.image.source="https://github.com/confidential-containers/trustee/kbs"
 
