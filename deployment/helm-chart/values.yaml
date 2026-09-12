@@ -258,7 +258,7 @@ bootstrapUserKeysJob:
     # -- OpenSSL `initContainer` image repository that generates demo keys.
     repository: alpine/openssl
     # -- OpenSSL `initContainer` image tag.
-    tag: "3.5.6"
+    tag: "3.5.7"
     # -- OpenSSL `initContainer` image pull policy.
     pullPolicy: IfNotPresent
   kubectlImage:
