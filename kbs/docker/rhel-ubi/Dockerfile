@@ -2,6 +2,10 @@
 FROM registry.access.redhat.com/ubi9:9.8-1790665138 as builder
 ARG ALIYUN=false
 ARG VAULT=true
+ARG GCP=false
+ARG AWS=false
+ARG EXTERNAL_PLUGIN=true
+ARG DCAP_VERSION=1_27_100
 
 RUN if [[ -n "${ACTIVATION_KEY}" && -n "${ORG_ID}" ]]; then \
     rm -f /etc/rhsm-host && rm -f /etc/pki/entitlement-host; \
@@ -40,8 +44,8 @@ ENV OPENSSL_NO_VENDOR=1
 #  export OPENSSL_NO_VENDOR=1; \
 # fi && \
 RUN ARCH=$(uname -m) && \
-pushd kbs && make AS_FEATURE=${KBS_FEATURES} ALIYUN=${ALIYUN} VAULT=${VAULT} ARCH=${ARCH} && make ARCH=${ARCH} install-kbs && popd
-
+pushd kbs && make AS_FEATURE=${KBS_FEATURES} FEATURES=pkcs11 ALIYUN=${ALIYUN} VAULT=${VAULT} ARCH=${ARCH} GCP=${GCP} AWS=${AWS} EXTERNAL_PLUGIN=${EXTERNAL_PLUGIN} && \
+     make ARCH=${ARCH} install-kbs && popd
 
 # Check the sha256sum of the Intel provided RPMs on x86_64.
 RUN if [ $(uname -m) = "x86_64" ]; then \
