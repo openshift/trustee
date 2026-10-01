@@ -24,7 +24,7 @@ RUN subscription-manager repos --enable codeready-builder-for-rhel-9-${ARCH/amd6
 # Build.
 WORKDIR /usr/src/kbs
 COPY . .
-ARG KBS_FEATURES=coco-as-builtin,intel-trust-authority-as
+ARG KBS_FEATURES=coco-as-builtin,intel-trust-authority-as,external-plugin
 RUN \
 # Build sgx_dcap_quoteverify stub.
 pushd sgx_dcap_quoteverify_stubs && \
