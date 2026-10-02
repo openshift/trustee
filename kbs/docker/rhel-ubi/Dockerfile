@@ -50,8 +50,7 @@ pushd kbs && make AS_FEATURE=${KBS_FEATURES} FEATURES=pkcs11 ALIYUN=${ALIYUN} VA
 # Check the sha256sum of the Intel provided RPMs on x86_64.
 RUN if [ $(uname -m) = "x86_64" ]; then \
   pushd sgx_dcap_quoteverify_stubs && \
-  echo "2621eac23cb756bc238f88d6db5401f7efed55d87855fc2b7e446ddfc1bd37ca" libsgx-dcap-default-qpl-1.21.100.3-1.el9.x86_64.rpm | sha256sum --check && \
-  echo "57da5fb2253a99bb2483d19b6f30d1170ebc384e2891937e2c89fa55886b7034" libsgx-dcap-quote-verify-1.21.100.3-1.el9.x86_64.rpm | sha256sum --check && \
+  echo "a7ea1e10da291357bec278c677c8f7c6c966039f3733b5b96532bcfe8541e54f" libsgx-dcap-quote-verify-1.27.100.1-1.el9.x86_64.rpm | sha256sum --check && \
   popd; \
 fi
 
@@ -63,17 +62,15 @@ FROM registry.access.redhat.com/ubi9/ubi-minimal:9.8-1790555810
 RUN microdnf -y update && microdnf clean all
 
 COPY --from=builder /usr/local/bin/kbs /usr/local/bin/kbs
-COPY --from=builder /usr/src/kbs/sgx_dcap_quoteverify_stubs/libsgx-dcap-quote-verify-1.21.100.3-1.el9.x86_64.rpm /tmp/libsgx-dcap-quote-verify-1.21.100.3-1.el9.x86_64.rpm
-COPY --from=builder /usr/src/kbs/sgx_dcap_quoteverify_stubs/libsgx-dcap-default-qpl-1.21.100.3-1.el9.x86_64.rpm /tmp/libsgx-dcap-default-qpl-1.21.100.3-1.el9.x86_64.rpm
+COPY --from=builder /usr/src/kbs/sgx_dcap_quoteverify_stubs/libsgx-dcap-quote-verify-1.27.100.1-1.el9.x86_64.rpm /tmp/libsgx-dcap-quote-verify-1.27.100.1-1.el9.x86_64.rpm
 
 # Install Intel binaries
 RUN \
 if [ $(uname -m) = "x86_64" ]; then \
     rpm -ivh --nodeps \
-    /tmp/libsgx-dcap-quote-verify-1.21.100.3-1.el9.x86_64.rpm \
-    /tmp/libsgx-dcap-default-qpl-1.21.100.3-1.el9.x86_64.rpm; \
+    /tmp/libsgx-dcap-quote-verify-1.27.100.1-1.el9.x86_64.rpm; \
 fi && \
-rm -f /tmp/libsgx-dcap-quote-verify-1.21.100.3-1.el9.x86_64.rpm /tmp/libsgx-dcap-default-qpl-1.21.100.3-1.el9.x86_64.rpm
+rm -f /tmp/libsgx-dcap-quote-verify-1.27.100.1-1.el9.x86_64.rpm
 
 # Not present by default in ubi-minimal
 RUN microdnf -y install tpm2-tss && microdnf clean all
