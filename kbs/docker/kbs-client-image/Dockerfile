@@ -12,6 +12,6 @@ RUN cd kbs && make cli-static-linux && \
     cp ../target/$(uname -m)-unknown-linux-gnu/release/kbs-client /
 
 # ubuntu:24.04
-FROM ubuntu@sha256:7c06e91f61fa88c08cc74f7e1b7c69ae24910d745357e0dfe1d2c0322aaf20f9
+FROM ubuntu@sha256:3595d7fc4286a33fad0fd853a4063e654287a9c3787437d7937c94ca3f7a804e
 
 COPY --from=builder /kbs-client /usr/local/bin/kbs-client
