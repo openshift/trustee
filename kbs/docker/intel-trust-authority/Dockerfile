@@ -1,5 +1,5 @@
 # rust:1.93.0
-FROM docker.io/library/rust@sha256:bbde3ca426faeebab3eb58b8005d3d6da70607817a14bb92a55c94611d4d905f \
+FROM docker.io/library/rust@sha256:5d05167b28cef0fa3a6c781cd77949386848191f3382e82cf53bd1277a47a98f \
     AS builder
 ARG ALIYUN=false
 ARG VAULT=false
