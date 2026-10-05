@@ -36,7 +36,7 @@ RUN if [ "$(uname -m)" != "${ARCH}" ]; then \
     cargo install --path attestation-service --bin restful-as --features restful-bin,${VERIFIER} --locked ${TARGET_FLAG}
 
 # ubuntu:24.04
-FROM ubuntu@sha256:7c06e91f61fa88c08cc74f7e1b7c69ae24910d745357e0dfe1d2c0322aaf20f9
+FROM ubuntu@sha256:f144425ff09be612d6d9ad965196e9cdc23dae1f42110a8a11a3e9a8198759f7
 
 ARG ARCH=x86_64
 ARG VERIFIER=all-verifier
