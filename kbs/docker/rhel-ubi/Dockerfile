@@ -52,7 +52,7 @@ RUN if [ $(uname -m) = "x86_64" ]; then \
 fi
 
 # Package UBI image.
-FROM registry.access.redhat.com/ubi9/ubi-minimal:9.8-1790555810
+FROM registry.redhat.io/ubi9/ubi-minimal-pqc:9.8-1790840388
 
 
 # Update packages. Get CVE fixes sooner.
