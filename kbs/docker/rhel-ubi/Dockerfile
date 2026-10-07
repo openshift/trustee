@@ -1,5 +1,5 @@
 # Use UBI to build.
-FROM registry.access.redhat.com/ubi9:9.8-1790665138 as builder
+FROM registry.access.redhat.com/ubi9:9.8-1791269371 as builder
 ARG ALIYUN=false
 ARG VAULT=true
 
