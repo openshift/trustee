@@ -54,7 +54,7 @@ jobs:
       - name: Build kbs-client
         run: cargo build -p kbs-client --release ${{ matrix.features }}
 
-      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: ${{ matrix.artifact }}
           path: target/release/kbs-client
@@ -143,7 +143,7 @@ jobs:
           docker save -o "${{ runner.temp }}/docker-e2e-image/${{ matrix.tag }}.tar" \
             "${IMAGE_PREFIX}/${{ matrix.tag }}:latest"
 
-      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: docker-e2e-image-${{ matrix.platform_slug }}-${{ matrix.tag }}
           path: ${{ runner.temp }}/docker-e2e-image/${{ matrix.tag }}.tar
@@ -194,7 +194,7 @@ jobs:
             "${IMAGE_PREFIX}/coco-as-grpc:latest" \
             "${IMAGE_PREFIX}/rvps:latest"
 
-      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: docker-e2e-images-${{ matrix.platform_slug }}
           path: ${{ runner.temp }}/docker-e2e-bundle/images.tar
