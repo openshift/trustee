@@ -6,6 +6,7 @@ project(
 stub_headers = files([
   'sgx_attributes.h',
   'sgx_dcap_qal.h',
+  'sgx_dcap_qal_types.h',
   'sgx_dcap_quoteverify.h',
   'sgx_defs.h',
   'sgx_eid.h',
