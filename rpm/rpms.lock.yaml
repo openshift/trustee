@@ -235,13 +235,13 @@ arches:
     name: libasan
     evr: 11.5.0-14.el9
     sourcerpm: gcc-11.5.0-14.el9.src.rpm
-  - url: https://cdn-ubi.redhat.com/content/public/ubi/dist/ubi9/9/s390x/appstream/os/Packages/l/libcurl-devel-7.76.1-40.el9_8.7.s390x.rpm
+  - url: https://cdn-ubi.redhat.com/content/public/ubi/dist/ubi9/9/s390x/appstream/os/Packages/l/libcurl-devel-7.76.1-40.el9_8.9.s390x.rpm
     repoid: ubi-9-for-s390x-appstream-rpms
-    size: 1005716
-    checksum: sha256:5497eac755dfb7ca1dcbdc00f33b75afd36b75a15b95277ab5a78607f0088faf
+    size: 1006043
+    checksum: sha256:e496a90e511ba28380c58b45bf232f52973cf45e05de1d794d1bc52759f8147a
     name: libcurl-devel
-    evr: 7.76.1-40.el9_8.7
-    sourcerpm: curl-7.76.1-40.el9_8.7.src.rpm
+    evr: 7.76.1-40.el9_8.9
+    sourcerpm: curl-7.76.1-40.el9_8.9.src.rpm
   - url: https://cdn-ubi.redhat.com/content/public/ubi/dist/ubi9/9/s390x/appstream/os/Packages/l/libdatrie-0.2.13-4.el9.s390x.rpm
     repoid: ubi-9-for-s390x-appstream-rpms
     size: 34848
@@ -2195,6 +2195,20 @@ arches:
     name: cracklib-dicts
     evr: 2.9.6-28.el9
     sourcerpm: cracklib-2.9.6-28.el9.src.rpm
+  - url: https://cdn-ubi.redhat.com/content/public/ubi/dist/ubi9/9/s390x/baseos/os/Packages/c/curl-7.76.1-40.el9_8.9.s390x.rpm
+    repoid: ubi-9-for-s390x-baseos-rpms
+    size: 306012
+    checksum: sha256:c8a5ec9fcbecd9ede86316f43cbae7767a4f7b183dac09537e6520f4f7fd049c
+    name: curl
+    evr: 7.76.1-40.el9_8.9
+    sourcerpm: curl-7.76.1-40.el9_8.9.src.rpm
+  - url: https://cdn-ubi.redhat.com/content/public/ubi/dist/ubi9/9/s390x/baseos/os/Packages/c/curl-minimal-7.76.1-40.el9_8.9.s390x.rpm
+    repoid: ubi-9-for-s390x-baseos-rpms
+    size: 135070
+    checksum: sha256:4e1bacaaef6f82cf33b4ead8078b6111e111cf703522f37d7672d6cd44e51048
+    name: curl-minimal
+    evr: 7.76.1-40.el9_8.9
+    sourcerpm: curl-7.76.1-40.el9_8.9.src.rpm
   - url: https://cdn-ubi.redhat.com/content/public/ubi/dist/ubi9/9/s390x/baseos/os/Packages/d/dbus-1.12.20-8.el9.s390x.rpm
     repoid: ubi-9-for-s390x-baseos-rpms
     size: 8049
@@ -2335,6 +2349,20 @@ arches:
     name: libatomic
     evr: 11.5.0-14.el9
     sourcerpm: gcc-11.5.0-14.el9.src.rpm
+  - url: https://cdn-ubi.redhat.com/content/public/ubi/dist/ubi9/9/s390x/baseos/os/Packages/l/libcurl-7.76.1-40.el9_8.9.s390x.rpm
+    repoid: ubi-9-for-s390x-baseos-rpms
+    size: 293164
+    checksum: sha256:732049a97a784be1bfa9dce6d41a2e6facb1fb32eaf2f6b038a0d43862ff352f
+    name: libcurl
+    evr: 7.76.1-40.el9_8.9
+    sourcerpm: curl-7.76.1-40.el9_8.9.src.rpm
+  - url: https://cdn-ubi.redhat.com/content/public/ubi/dist/ubi9/9/s390x/baseos/os/Packages/l/libcurl-minimal-7.76.1-40.el9_8.9.s390x.rpm
+    repoid: ubi-9-for-s390x-baseos-rpms
+    size: 233082
+    checksum: sha256:601e374387f7e13d532f938ad9dc52dadbcbfe99455de6631527a1791cf76655
+    name: libcurl-minimal
+    evr: 7.76.1-40.el9_8.9
+    sourcerpm: curl-7.76.1-40.el9_8.9.src.rpm
   - url: https://cdn-ubi.redhat.com/content/public/ubi/dist/ubi9/9/s390x/baseos/os/Packages/l/libdb-5.3.28-57.el9_6.s390x.rpm
     repoid: ubi-9-for-s390x-baseos-rpms
     size: 721041
@@ -3627,12 +3655,12 @@ arches:
     checksum: sha256:4708420bdde578448be8c06a6b608635743682f6370d7d45d7cae46842529fa0
     name: cracklib
     evr: 2.9.6-28.el9
-  - url: https://cdn-ubi.redhat.com/content/public/ubi/dist/ubi9/9/s390x/baseos/source/SRPMS/Packages/c/curl-7.76.1-40.el9_8.7.src.rpm
+  - url: https://cdn-ubi.redhat.com/content/public/ubi/dist/ubi9/9/s390x/baseos/source/SRPMS/Packages/c/curl-7.76.1-40.el9_8.9.src.rpm
     repoid: ubi-9-for-s390x-baseos-source-rpms
-    size: 2579601
-    checksum: sha256:2cb2bc752c2e87f1abf88ac67c2dd19a740df993d57e88f3920dedbc37f0019d
+    size: 2586626
+    checksum: sha256:5b232294ba008dffd8e36196f1636691c0351a8ad6c9e5d0f8f7f0ee6458ad4b
     name: curl
-    evr: 7.76.1-40.el9_8.7
+    evr: 7.76.1-40.el9_8.9
   - url: https://cdn-ubi.redhat.com/content/public/ubi/dist/ubi9/9/s390x/baseos/source/SRPMS/Packages/d/dbus-1.12.20-8.el9.src.rpm
     repoid: ubi-9-for-s390x-baseos-source-rpms
     size: 2143916
@@ -4178,13 +4206,13 @@ arches:
     name: kernel-srpm-macros
     evr: 1.0-14.el9
     sourcerpm: kernel-srpm-macros-1.0-14.el9.src.rpm
-  - url: https://cdn-ubi.redhat.com/content/public/ubi/dist/ubi9/9/x86_64/appstream/os/Packages/l/libcurl-devel-7.76.1-40.el9_8.7.x86_64.rpm
+  - url: https://cdn-ubi.redhat.com/content/public/ubi/dist/ubi9/9/x86_64/appstream/os/Packages/l/libcurl-devel-7.76.1-40.el9_8.9.x86_64.rpm
     repoid: ubi-9-for-x86_64-appstream-rpms
-    size: 1005747
-    checksum: sha256:8bbe92cdf7ece942bbabf394c0f33115e387e994b9fb33e82f670c19ac4aee5c
+    size: 1006002
+    checksum: sha256:74f83861240bd6f751dacbb75ae5210685c37f16eeabeb123e2358bb76d08964
     name: libcurl-devel
-    evr: 7.76.1-40.el9_8.7
-    sourcerpm: curl-7.76.1-40.el9_8.7.src.rpm
+    evr: 7.76.1-40.el9_8.9
+    sourcerpm: curl-7.76.1-40.el9_8.9.src.rpm
   - url: https://cdn-ubi.redhat.com/content/public/ubi/dist/ubi9/9/x86_64/appstream/os/Packages/l/libdatrie-0.2.13-4.el9.x86_64.rpm
     repoid: ubi-9-for-x86_64-appstream-rpms
     size: 35144
@@ -6152,6 +6180,20 @@ arches:
     name: cracklib-dicts
     evr: 2.9.6-28.el9
     sourcerpm: cracklib-2.9.6-28.el9.src.rpm
+  - url: https://cdn-ubi.redhat.com/content/public/ubi/dist/ubi9/9/x86_64/baseos/os/Packages/c/curl-7.76.1-40.el9_8.9.x86_64.rpm
+    repoid: ubi-9-for-x86_64-baseos-rpms
+    size: 307778
+    checksum: sha256:41f3588e1e68b120c94acc817af08be2f8f021ce534e01f87a1757c497a13515
+    name: curl
+    evr: 7.76.1-40.el9_8.9
+    sourcerpm: curl-7.76.1-40.el9_8.9.src.rpm
+  - url: https://cdn-ubi.redhat.com/content/public/ubi/dist/ubi9/9/x86_64/baseos/os/Packages/c/curl-minimal-7.76.1-40.el9_8.9.x86_64.rpm
+    repoid: ubi-9-for-x86_64-baseos-rpms
+    size: 136364
+    checksum: sha256:a91f6bf4c722d5382d8ac7b60a953d3aee2cae25c61c8e6324e235778c4ad91f
+    name: curl-minimal
+    evr: 7.76.1-40.el9_8.9
+    sourcerpm: curl-7.76.1-40.el9_8.9.src.rpm
   - url: https://cdn-ubi.redhat.com/content/public/ubi/dist/ubi9/9/x86_64/baseos/os/Packages/d/dbus-1.12.20-8.el9.x86_64.rpm
     repoid: ubi-9-for-x86_64-baseos-rpms
     size: 8073
@@ -6292,6 +6334,20 @@ arches:
     name: libatomic
     evr: 11.5.0-14.el9
     sourcerpm: gcc-11.5.0-14.el9.src.rpm
+  - url: https://cdn-ubi.redhat.com/content/public/ubi/dist/ubi9/9/x86_64/baseos/os/Packages/l/libcurl-7.76.1-40.el9_8.9.x86_64.rpm
+    repoid: ubi-9-for-x86_64-baseos-rpms
+    size: 298266
+    checksum: sha256:0b196b55b1e358e08c7aed3a3eee2af18009dd66c7a73c4f2efc08f18a6b5c63
+    name: libcurl
+    evr: 7.76.1-40.el9_8.9
+    sourcerpm: curl-7.76.1-40.el9_8.9.src.rpm
+  - url: https://cdn-ubi.redhat.com/content/public/ubi/dist/ubi9/9/x86_64/baseos/os/Packages/l/libcurl-minimal-7.76.1-40.el9_8.9.x86_64.rpm
+    repoid: ubi-9-for-x86_64-baseos-rpms
+    size: 237787
+    checksum: sha256:f08df756c7edcebcc9313bcaa3484763a2411ab56000c250646ba58b7958ae4e
+    name: libcurl-minimal
+    evr: 7.76.1-40.el9_8.9
+    sourcerpm: curl-7.76.1-40.el9_8.9.src.rpm
   - url: https://cdn-ubi.redhat.com/content/public/ubi/dist/ubi9/9/x86_64/baseos/os/Packages/l/libdb-5.3.28-57.el9_6.x86_64.rpm
     repoid: ubi-9-for-x86_64-baseos-rpms
     size: 755192
@@ -7570,12 +7626,12 @@ arches:
     checksum: sha256:4708420bdde578448be8c06a6b608635743682f6370d7d45d7cae46842529fa0
     name: cracklib
     evr: 2.9.6-28.el9
-  - url: https://cdn-ubi.redhat.com/content/public/ubi/dist/ubi9/9/x86_64/baseos/source/SRPMS/Packages/c/curl-7.76.1-40.el9_8.7.src.rpm
+  - url: https://cdn-ubi.redhat.com/content/public/ubi/dist/ubi9/9/x86_64/baseos/source/SRPMS/Packages/c/curl-7.76.1-40.el9_8.9.src.rpm
     repoid: ubi-9-for-x86_64-baseos-source-rpms
-    size: 2579601
-    checksum: sha256:2cb2bc752c2e87f1abf88ac67c2dd19a740df993d57e88f3920dedbc37f0019d
+    size: 2586626
+    checksum: sha256:5b232294ba008dffd8e36196f1636691c0351a8ad6c9e5d0f8f7f0ee6458ad4b
     name: curl
-    evr: 7.76.1-40.el9_8.7
+    evr: 7.76.1-40.el9_8.9
   - url: https://cdn-ubi.redhat.com/content/public/ubi/dist/ubi9/9/x86_64/baseos/source/SRPMS/Packages/d/dbus-1.12.20-8.el9.src.rpm
     repoid: ubi-9-for-x86_64-baseos-source-rpms
     size: 2143916
