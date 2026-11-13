@@ -1,5 +1,5 @@
 # rust:1.85.1
-FROM docker.io/library/rust@sha256:e51d0265072d2d9d5d320f6a44dde6b9ef13653b035098febd68cce8fa7c0bc4 \
+FROM docker.io/library/rust@sha256:0b0ea86881537b3f645aace7e8e39556289f8787db057317c8d4978548213b9e \
     AS builder
 
 WORKDIR /usr/src/kbs
