@@ -4,7 +4,7 @@
 
 # rust:1.95.0
 FROM --platform=${BUILDPLATFORM:-linux/amd64} \
-    docker.io/library/rust@sha256:f49565f188ee00bc2a18dd418183f2c5f23ef7d6e691890517ed341a598f67c3 \
+    docker.io/library/rust@sha256:223cc32ddca8f3ee90c436dbc94b6b5f052ea7f9653c5201e9612f08ad7d21b8 \
     AS builder
 ARG ARCH=x86_64
 ARG VERIFIER=all-verifier
